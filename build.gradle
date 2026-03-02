@@ -204,22 +204,25 @@ application {
  * adding the Maven JARs to the module path to avoid "duplicate module" errors.
  */
 tasks.named('run') {
-    def jfxPattern = ~/^javafx-.*\.jar$/
-    def jfxFiles = configurations.runtimeClasspath.filter { it.name ==~ jfxPattern }
-
-    // Remove JavaFX JARs from classpath to avoid split-package conflicts
-    classpath = classpath.filter { !(it.name ==~ jfxPattern) }
-
-    // Add JavaFX JARs to the module path only when the running JDK does not already bundle JavaFX.
-    // Liberica Full JDK ships JavaFX as built-in modules; adding them again causes duplicate-module errors.
     doFirst {
+        def jfxPattern = ~/^javafx-.*\.jar$/
+
+        // Always remove JavaFX JARs from the classpath to avoid split-package conflicts with named
+        // modules.  Eagerly resolve the classpath files so there is no circular FileCollection
+        // reference: Gradle's ConfigurableFileCollection.setFrom(itself.filter{}) creates a cycle
+        // that prevents the collection from being resolved correctly at execution time.
+        classpath = project.files(classpath.files.findAll { !(it.name ==~ jfxPattern) })
+
+        // Add JavaFX JARs to the module path only when the running JDK does not already bundle JavaFX.
+        // Liberica Full JDK ships JavaFX as built-in modules; adding them again causes duplicate-module errors.
         def currentJavaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome()
         def jdkHasJavaFX = new File(currentJavaHome, 'jmods/javafx.base.jmod').exists() ||
                            new File(currentJavaHome, 'lib/javafx.base.jar').exists()
         if (!jdkHasJavaFX) {
-            def path = jfxFiles.asPath
-            if (!path.isEmpty()) {
-                jvmArgs "--module-path=${path}"
+            def jfxFiles = configurations.runtimeClasspath.filter { it.name ==~ jfxPattern }
+            def modulePath = jfxFiles.asPath
+            if (!modulePath.isEmpty()) {
+                jvmArgs "--module-path=${modulePath}"
             }
         }
     }
