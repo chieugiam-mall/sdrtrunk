@@ -58,22 +58,6 @@ repositories {
 //Version is defined in gradle.properties so that we can CLI override it for nightly builds.
 version = project.findProperty('projectVersion')
 
-// Verify that the JDK includes JavaFX (requires Bellsoft Liberica JDK Full).
-// Standard OpenJDK distributions (e.g. Temurin) do not include JavaFX and will fail to compile.
-def javaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome()
-def javafxJmod = new File(javaHome, 'jmods/javafx.base.jmod')
-def javafxJar = new File(javaHome, 'lib/javafx.base.jar')
-if (!javafxJmod.exists() && !javafxJar.exists()) {
-    def requiredVersion = 25
-    throw new GradleException(
-        "JavaFX not found in the current JDK (${javaHome}).\n" +
-        "This project requires Bellsoft Liberica JDK Full which bundles JavaFX.\n" +
-        "Download from: https://bell-sw.com/pages/downloads/\n" +
-        "Select: Java ${requiredVersion}, Full JDK (includes JavaFX).\n" +
-        "In GitHub Actions, use: distribution: 'liberica', java-package: 'jdk+fx'."
-    )
-}
-
 //Java 24 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
@@ -215,6 +199,9 @@ application {
  * Add JavaFX JARs to the module path when running the application.
  * JavaFX is provided as Maven dependencies (JARs on the classpath by default) but must be
  * on the module path so the JVM can resolve them as named modules via --add-modules.
+ *
+ * When running with a JDK that already bundles JavaFX (e.g. Bellsoft Liberica Full), we skip
+ * adding the Maven JARs to the module path to avoid "duplicate module" errors.
  */
 tasks.named('run') {
     def jfxPattern = ~/^javafx-.*\.jar$/
@@ -223,11 +210,17 @@ tasks.named('run') {
     // Remove JavaFX JARs from classpath to avoid split-package conflicts
     classpath = classpath.filter { !(it.name ==~ jfxPattern) }
 
-    // Add JavaFX JARs to the module path at execution time
+    // Add JavaFX JARs to the module path only when the running JDK does not already bundle JavaFX.
+    // Liberica Full JDK ships JavaFX as built-in modules; adding them again causes duplicate-module errors.
     doFirst {
-        def path = jfxFiles.asPath
-        if (!path.isEmpty()) {
-            jvmArgs "--module-path=${path}"
+        def currentJavaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome()
+        def jdkHasJavaFX = new File(currentJavaHome, 'jmods/javafx.base.jmod').exists() ||
+                           new File(currentJavaHome, 'lib/javafx.base.jar').exists()
+        if (!jdkHasJavaFX) {
+            def path = jfxFiles.asPath
+            if (!path.isEmpty()) {
+                jvmArgs "--module-path=${path}"
+            }
         }
     }
 }
