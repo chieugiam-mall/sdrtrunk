@@ -34,6 +34,7 @@ import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.decoder.DecoderLogicalChannelNameIdentifier;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
@@ -91,6 +92,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     private TunerManager mTunerManager;
     private AliasModel mAliasModel;
     private UserPreferences mUserPreferences;
+    private DecryptionEngine mDecryptionEngine;
     private List<Long> mLoggedFrequencies = new ArrayList<>();
     private List<ScheduledFuture<?>> mDelayedChannelStartTasks = new ArrayList<>();
 
@@ -102,16 +104,28 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
      * @param tunerManager for obtaining a tuner channel source for the channel
      * @param aliasModel for aliasing of identifiers produced by the channel
      * @param userPreferences for user defined behavior and settings
+     * @param decryptionEngine for decrypting encrypted audio frames, may be null
      */
     public ChannelProcessingManager(ChannelMapModel channelMapModel, EventLogManager eventLogManager,
-                                    TunerManager tunerManager, AliasModel aliasModel, UserPreferences userPreferences)
+                                    TunerManager tunerManager, AliasModel aliasModel, UserPreferences userPreferences,
+                                    DecryptionEngine decryptionEngine)
     {
         mChannelMapModel = channelMapModel;
         mEventLogManager = eventLogManager;
         mTunerManager = tunerManager;
         mAliasModel = aliasModel;
         mUserPreferences = userPreferences;
+        mDecryptionEngine = decryptionEngine;
         mChannelMetadataModel = new ChannelMetadataModel();
+    }
+
+    /**
+     * Constructs the channel processing manager without a decryption engine.
+     */
+    public ChannelProcessingManager(ChannelMapModel channelMapModel, EventLogManager eventLogManager,
+                                    TunerManager tunerManager, AliasModel aliasModel, UserPreferences userPreferences)
+    {
+        this(channelMapModel, eventLogManager, tunerManager, aliasModel, userPreferences, null);
     }
 
     /**
@@ -462,7 +476,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
 
         /* Processing Modules */
         List<Module> modules = DecoderFactory.getModules(mChannelMapModel, channel, mAliasModel, mUserPreferences,
-            request.getTrafficChannelManager(), request.getChannelDescriptor());
+            request.getTrafficChannelManager(), request.getChannelDescriptor(), mDecryptionEngine);
         processingChain.addModules(modules);
 
         //Post preload data from the request to the event bus.  Modules that can handle preload data will annotate

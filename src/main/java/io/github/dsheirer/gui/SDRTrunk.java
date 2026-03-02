@@ -200,7 +200,7 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         AliasModel aliasModel = new AliasModel();
         EventLogManager eventLogManager = new EventLogManager(aliasModel, mUserPreferences);
-        mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, mIconModel);
+        mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, mIconModel, mDecryptionEngine);
 
         boolean headless = GraphicsEnvironment.isHeadless();
 

@@ -22,21 +22,30 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncParameters;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class P25P1AudioModule extends ImbeAudioModule
 {
+    private static final int IMBE_FRAME_SIZE = 18;
+
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
+
+    private DecryptionEngine mDecryptionEngine;
+    private String mCurrentEncryptionKID;
+    private byte[] mCurrentMessageIndicator;
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
@@ -45,6 +54,15 @@ public class P25P1AudioModule extends ImbeAudioModule
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
         super(userPreferences, aliasList);
+    }
+
+    /**
+     * Sets the decryption engine to use for decrypting encrypted audio frames.
+     * @param engine the shared DecryptionEngine instance, or null to disable decryption
+     */
+    public void setDecryptionEngine(DecryptionEngine engine)
+    {
+        mDecryptionEngine = engine;
     }
 
     @Override
@@ -63,6 +81,8 @@ public class P25P1AudioModule extends ImbeAudioModule
     public void reset()
     {
         getIdentifierCollection().clear();
+        mCurrentEncryptionKID = null;
+        mCurrentMessageIndicator = null;
     }
 
     @Override
@@ -94,6 +114,12 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
+
+                    if(mEncryptedCall)
+                    {
+                        mCurrentEncryptionKID = String.format("%04X", hdu.getHeaderData().getEncryptionKey().getValue().getKey());
+                        mCurrentMessageIndicator = DecryptionEngine.hexToBytes(hdu.getHeaderData().getMessageIndicator());
+                    }
                 }
                 else if(message instanceof LDU1Message ldu1)
                 {
@@ -106,7 +132,14 @@ public class P25P1AudioModule extends ImbeAudioModule
                     if(ldu2.getEncryptionSyncParameters().isValid())
                     {
                         mEncryptedCallStateEstablished = true;
-                        mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                        EncryptionSyncParameters esp = ldu2.getEncryptionSyncParameters();
+                        mEncryptedCall = esp.isEncryptedAudio();
+
+                        if(mEncryptedCall)
+                        {
+                            mCurrentEncryptionKID = String.format("%04X", esp.getEncryptionKey().getValue().getKey());
+                            mCurrentMessageIndicator = DecryptionEngine.hexToBytes(esp.getMessageIndicator());
+                        }
                     }
 
                     if(mEncryptedCallStateEstablished)
@@ -130,6 +163,8 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     /**
      * Processes an audio packet by decoding the IMBE audio frames and rebroadcasting them as PCM audio packets.
+     * When the call is encrypted and a decryption engine with a matching key is available, the IMBE frames are
+     * decrypted before being passed to the audio codec.
      */
     private void processAudio(LDUMessage ldu)
     {
@@ -142,9 +177,30 @@ public class P25P1AudioModule extends ImbeAudioModule
                 addAudio(audio);
             }
         }
-        else
+        else if(mDecryptionEngine != null && mCurrentEncryptionKID != null)
         {
-            //Encrypted audio processing not implemented
+            List<byte[]> frames = ldu.getIMBEFrames();
+            byte[] concatenated = new byte[frames.size() * IMBE_FRAME_SIZE];
+            for(int i = 0; i < frames.size(); i++)
+            {
+                byte[] frame = frames.get(i);
+                System.arraycopy(frame, 0, concatenated, i * IMBE_FRAME_SIZE,
+                    Math.min(frame.length, IMBE_FRAME_SIZE));
+            }
+
+            byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
+
+            if(decrypted.length == concatenated.length)
+            {
+                for(int i = 0; i < frames.size(); i++)
+                {
+                    byte[] decryptedFrame = Arrays.copyOfRange(decrypted, i * IMBE_FRAME_SIZE,
+                        (i + 1) * IMBE_FRAME_SIZE);
+                    float[] audio = getAudioCodec().getAudio(decryptedFrame);
+                    audio = mGain.apply(audio);
+                    addAudio(audio);
+                }
+            }
         }
     }
 
@@ -164,6 +220,8 @@ public class P25P1AudioModule extends ImbeAudioModule
                 mEncryptedCallStateEstablished = false;
                 mEncryptedCall = false;
                 mCachedLDUMessages.clear();
+                mCurrentEncryptionKID = null;
+                mCurrentMessageIndicator = null;
             }
         }
     }

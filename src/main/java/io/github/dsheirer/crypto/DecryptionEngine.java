@@ -123,9 +123,60 @@ public class DecryptionEngine
         }
     }
 
+    /**
+     * Decrypts the provided ciphertext using the key registered for the given KID, incorporating the message
+     * indicator (MI) as additional key material for stream ciphers such as RC4.
+     *
+     * @param kid             Key ID string
+     * @param messageIndicator 9-byte message indicator / initialization vector (may be null or empty)
+     * @param ciphertext      Encrypted bytes
+     * @return Decrypted bytes, or an empty byte array on failure
+     */
+    public byte[] decrypt(String kid, byte[] messageIndicator, byte[] ciphertext)
+    {
+        EncryptionKey key = mKeys.get(kid);
+
+        if(key == null)
+        {
+            mLog.warn("No key found for KID [{}]", kid);
+            return new byte[0];
+        }
+
+        try
+        {
+            if("RC4".equals(key.getAlgorithm()) && messageIndicator != null && messageIndicator.length > 0)
+            {
+                return decryptRC4WithMI(key.getRawKey(), messageIndicator, ciphertext);
+            }
+
+            return decryptWithKey(key, ciphertext);
+        }
+        catch(Exception e)
+        {
+            mLog.error("Decryption failed for KID [{}] algorithm [{}]", kid, key.getAlgorithm(), e);
+            return new byte[0];
+        }
+    }
+
     private byte[] decryptRC4(byte[] rawKey, byte[] ciphertext) throws Exception
     {
         SecretKey secretKey = new SecretKeySpec(rawKey, "ARCFOUR");
+        Cipher cipher = Cipher.getInstance("ARCFOUR");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey);
+        return cipher.doFinal(ciphertext);
+    }
+
+    /**
+     * Decrypts using RC4 (ARCFOUR) with a key seed derived by combining the user key and the message indicator.
+     * The key seed is formed by concatenating the MI bytes followed by the raw key bytes, providing per-call
+     * uniqueness consistent with P25 ADP usage.
+     */
+    private byte[] decryptRC4WithMI(byte[] rawKey, byte[] mi, byte[] ciphertext) throws Exception
+    {
+        byte[] keySeed = new byte[mi.length + rawKey.length];
+        System.arraycopy(mi, 0, keySeed, 0, mi.length);
+        System.arraycopy(rawKey, 0, keySeed, mi.length, rawKey.length);
+        SecretKey secretKey = new SecretKeySpec(keySeed, "ARCFOUR");
         Cipher cipher = Cipher.getInstance("ARCFOUR");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
         return cipher.doFinal(ciphertext);
@@ -157,5 +208,33 @@ public class DecryptionEngine
     public List<EncryptionKey> getKeys()
     {
         return Collections.unmodifiableList(new ArrayList<>(mKeys.values()));
+    }
+
+    /**
+     * Parses a hex string into a byte array.
+     *
+     * @param hex Hex string (even length, valid hex digits). May be null or empty.
+     * @return Parsed byte array, or null if the input is null, empty, or invalid.
+     */
+    public static byte[] hexToBytes(String hex)
+    {
+        if(hex == null || hex.isEmpty() || hex.length() % 2 != 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            byte[] bytes = new byte[hex.length() / 2];
+            for(int i = 0; i < hex.length(); i += 2)
+            {
+                bytes[i / 2] = (byte) Integer.parseInt(hex.substring(i, i + 2), 16);
+            }
+            return bytes;
+        }
+        catch(NumberFormatException e)
+        {
+            return null;
+        }
     }
 }

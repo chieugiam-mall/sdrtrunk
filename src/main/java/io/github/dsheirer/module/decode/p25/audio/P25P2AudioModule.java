@@ -24,6 +24,7 @@ import io.github.dsheirer.audio.codec.mbe.AmbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.bits.BinaryMessage;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.IdentifierUpdateProvider;
 import io.github.dsheirer.identifier.Role;
@@ -64,9 +65,22 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
     private boolean mEncryptedCall = false;
     private Listener<IMessage> mMessageListener;
 
+    private DecryptionEngine mDecryptionEngine;
+    private String mCurrentEncryptionKID;
+    private byte[] mCurrentMessageIndicator;
+
     public P25P2AudioModule(UserPreferences userPreferences, int timeslot, AliasList aliasList)
     {
         super(userPreferences, aliasList, timeslot);
+    }
+
+    /**
+     * Sets the decryption engine to use for decrypting encrypted audio frames.
+     * @param engine the shared DecryptionEngine instance, or null to disable decryption
+     */
+    public void setDecryptionEngine(DecryptionEngine engine)
+    {
+        mDecryptionEngine = engine;
     }
 
     @Override
@@ -91,6 +105,8 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
         //Reset encrypted call handling flags
         mEncryptedCallStateEstablished = false;
         mEncryptedCall = false;
+        mCurrentEncryptionKID = null;
+        mCurrentMessageIndicator = null;
     }
 
     @Override
@@ -121,6 +137,10 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                     {
                         processAudio(abstractVoiceTimeslot.getVoiceFrames(), message.getTimestamp());
                     }
+                    else if(mDecryptionEngine != null && mCurrentEncryptionKID != null)
+                    {
+                        processEncryptedAudio(abstractVoiceTimeslot.getVoiceFrames(), message.getTimestamp());
+                    }
                 }
                 else
                 {
@@ -136,15 +156,29 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = pushToTalk.isEncrypted();
+
+                    if(mEncryptedCall)
+                    {
+                        mCurrentEncryptionKID = String.format("%04X", pushToTalk.getEncryptionKey().getValue().getKey());
+                        mCurrentMessageIndicator = DecryptionEngine.hexToBytes(pushToTalk.getMessageIndicator());
+                    }
+
                     //There should not be any pending voice timeslots to process since the PTT message is the first in
                     //the audio call sequence.
                     clearPendingVoiceTimeslots();
                 }
             }
-            else if(message instanceof EncryptionSynchronizationSequence && message.isValid())
+            else if(message instanceof EncryptionSynchronizationSequence ess && message.isValid())
             {
                 mEncryptedCallStateEstablished = true;
-                mEncryptedCall = ((EncryptionSynchronizationSequence)message).isEncrypted();
+                mEncryptedCall = ess.isEncrypted();
+
+                if(mEncryptedCall)
+                {
+                    mCurrentEncryptionKID = String.format("%04X", ess.getEncryptionKey().getValue().getKey());
+                    mCurrentMessageIndicator = DecryptionEngine.hexToBytes(ess.getMessageIndicator());
+                }
+
                 processPendingVoiceTimeslots();
             }
         }
@@ -194,6 +228,48 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 catch(Exception e)
                 {
                     mLog.error("Error synthesizing AMBE audio - continuing [" + e.getLocalizedMessage() + "]");
+                }
+            }
+        }
+    }
+
+    /**
+     * Decrypts and processes encrypted audio voice frames using the registered DecryptionEngine.
+     * All voice frames in the timeslot are concatenated, decrypted as a single block, then processed individually.
+     * @param voiceFrames to decrypt and process
+     * @param timestamp of the carrier message
+     */
+    private void processEncryptedAudio(List<BinaryMessage> voiceFrames, long timestamp)
+    {
+        if(!hasAudioCodec() || voiceFrames.isEmpty())
+        {
+            return;
+        }
+
+        int frameSize = voiceFrames.get(0).getBytes().length;
+        byte[] concatenated = new byte[voiceFrames.size() * frameSize];
+        for(int i = 0; i < voiceFrames.size(); i++)
+        {
+            byte[] frameBytes = voiceFrames.get(i).getBytes();
+            System.arraycopy(frameBytes, 0, concatenated, i * frameSize, Math.min(frameBytes.length, frameSize));
+        }
+
+        byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
+
+        if(decrypted.length == concatenated.length)
+        {
+            for(int i = 0; i < voiceFrames.size(); i++)
+            {
+                byte[] decryptedFrame = java.util.Arrays.copyOfRange(decrypted, i * frameSize, (i + 1) * frameSize);
+                try
+                {
+                    IAudioWithMetadata audioWithMetadata = getAudioCodec().getAudioWithMetadata(decryptedFrame);
+                    addAudio(audioWithMetadata.getAudio());
+                    processMetadata(audioWithMetadata, timestamp);
+                }
+                catch(Exception e)
+                {
+                    mLog.error("Error synthesizing decrypted AMBE audio - continuing [" + e.getLocalizedMessage() + "]");
                 }
             }
         }
