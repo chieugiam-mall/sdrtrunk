@@ -32,6 +32,7 @@ import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.controller.channel.map.ChannelMap;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.playlist.IAliasListRefreshListener;
 import io.github.dsheirer.icon.IconModel;
@@ -94,7 +95,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
      * @param iconModel for icons
      */
     public PlaylistManager(UserPreferences userPreferences, TunerManager tunerManager, AliasModel aliasModel,
-                           EventLogManager eventLogManager, IconModel iconModel)
+                           EventLogManager eventLogManager, IconModel iconModel, DecryptionEngine decryptionEngine)
     {
         mUserPreferences = userPreferences;
         mTunerManager = tunerManager;
@@ -106,7 +107,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
         mChannelModel = new ChannelModel(mAliasModel);
         mChannelProcessingManager = new ChannelProcessingManager(mChannelMapModel, eventLogManager, mTunerManager,
-            mAliasModel, mUserPreferences);
+            mAliasModel, mUserPreferences, decryptionEngine);
 
         //Register the channel processing manager to receive global channel stop processing requests so that it can
         //respond to tuner shutdown (ie error) events
@@ -136,6 +137,15 @@ public class PlaylistManager implements Listener<ChannelEvent>
                     break;
             }
         });
+    }
+
+    /**
+     * Constructs a PlaylistManager without a decryption engine.
+     */
+    public PlaylistManager(UserPreferences userPreferences, TunerManager tunerManager, AliasModel aliasModel,
+                           EventLogManager eventLogManager, IconModel iconModel)
+    {
+        this(userPreferences, tunerManager, aliasModel, eventLogManager, iconModel, null);
     }
 
     /**

@@ -22,6 +22,7 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.AmbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.IdentifierUpdateProvider;
 import io.github.dsheirer.identifier.Role;
@@ -65,6 +66,10 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
     private boolean mEncryptedCall = false;
     private Listener<IMessage> mMessageListener;
 
+    private DecryptionEngine mDecryptionEngine;
+    private String mCurrentEncryptionKID;
+    private byte[] mCurrentInitializationVector;
+
     /**
      * Constructs an instance
      * @param userPreferences for JMBE library location
@@ -74,6 +79,15 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
     public DMRAudioModule(UserPreferences userPreferences, AliasList aliasList, int timeslot)
     {
         super(userPreferences, aliasList, timeslot);
+    }
+
+    /**
+     * Sets the decryption engine to use for decrypting encrypted audio frames.
+     * @param engine the shared DecryptionEngine instance, or null to disable decryption
+     */
+    public void setDecryptionEngine(DecryptionEngine engine)
+    {
+        mDecryptionEngine = engine;
     }
 
     @Override
@@ -91,6 +105,8 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
         mEncryptedCall = false;
         mEncryptedCallStateEstablished = false;
         mQueuedAmbeFrames.clear();
+        mCurrentEncryptionKID = null;
+        mCurrentInitializationVector = null;
     }
 
     @Override
@@ -119,10 +135,11 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
                 else if(message instanceof VoiceEMBMessage voice)
                 {
                     if(voice.hasEmbeddedParameters() &&
-                       voice.getEmbeddedParameters().getShortBurst() instanceof EmbeddedEncryptionParameters)
+                       voice.getEmbeddedParameters().getShortBurst() instanceof EmbeddedEncryptionParameters eep)
                     {
                         mEncryptedCallStateEstablished = true;
                         mEncryptedCall = true;
+                        mCurrentEncryptionKID = String.format("%04X", eep.getKey());
                     }
                     else if(voice.getEMB().isValid())
                     {
@@ -141,6 +158,8 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = true;
+                    mCurrentEncryptionKID = String.format("%04X", ep.getKeyId());
+                    mCurrentInitializationVector = DecryptionEngine.hexToBytes(ep.getInitializationVector());
                 }
                 //Note: the DMRMessageProcessor extracts Full Link Control messages from Voice Frames B-C and sends them
                 // independent of any DMR Burst messaging.  When encountered, it can be assumed that they are part of
@@ -163,7 +182,18 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
             {
                 if(mEncryptedCallStateEstablished && mEncryptedCall)
                 {
-                    mQueuedAmbeFrames.clear();
+                    if(mDecryptionEngine != null && mCurrentEncryptionKID != null)
+                    {
+                        List<byte[]> frames = voiceMessage.getAMBEFrames();
+                        for(byte[] frame : frames)
+                        {
+                            processEncryptedAudio(frame, message.getTimestamp());
+                        }
+                    }
+                    else
+                    {
+                        mQueuedAmbeFrames.clear();
+                    }
                 }
                 else
                 {
@@ -231,6 +261,21 @@ public class DMRAudioModule extends AmbeAudioModule implements IdentifierUpdateP
         catch(Exception e)
         {
             mLog.error("Error synthesizing DMR AMBE audio - continuing [" + e.getMessage() + "]");
+        }
+    }
+
+    /**
+     * Decrypts a single AMBE frame and passes it to the audio codec.
+     * @param frame the encrypted AMBE frame bytes
+     * @param timestamp of the carrier message
+     */
+    private void processEncryptedAudio(byte[] frame, long timestamp)
+    {
+        byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentInitializationVector, frame);
+
+        if(decrypted.length == frame.length)
+        {
+            produceAudio(decrypted, timestamp);
         }
     }
 

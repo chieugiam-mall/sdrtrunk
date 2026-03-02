@@ -28,6 +28,7 @@ import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.map.ChannelMap;
+import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.filter.AllPassFilter;
 import io.github.dsheirer.filter.FilterSet;
@@ -125,16 +126,43 @@ public class DecoderFactory
      * Returns a list of one primary decoder and any auxiliary decoders, as
      * specified in the configurations.
      *
+     * @param channelMapModel for channel map lookups
+     * @param channel configuration
+     * @param aliasModel for alias lookups
+     * @param userPreferences instance
+     * @param trafficChannelManager optional traffic channel manager to use
+     * @param channelDescriptor to preload into the decoder state as the current channel
+     * @param decryptionEngine for decrypting encrypted audio frames, may be null
+     * @return list of configured decoders
+     */
+    public static List<Module> getModules(ChannelMapModel channelMapModel, Channel channel, AliasModel aliasModel,
+                                          UserPreferences userPreferences, TrafficChannelManager trafficChannelManager,
+                                          IChannelDescriptor channelDescriptor, DecryptionEngine decryptionEngine)
+    {
+        List<Module> modules = getPrimaryModules(channelMapModel, channel, aliasModel, userPreferences,
+                trafficChannelManager, channelDescriptor, decryptionEngine);
+        modules.addAll(getAuxiliaryDecoders(channel.getAuxDecodeConfiguration()));
+        return modules;
+    }
+
+    /**
+     * Returns a list of one primary decoder and any auxiliary decoders, as
+     * specified in the configurations. No decryption engine is provided.
+     *
+     * @param channelMapModel for channel map lookups
+     * @param channel configuration
+     * @param aliasModel for alias lookups
+     * @param userPreferences instance
+     * @param trafficChannelManager optional traffic channel manager to use
+     * @param channelDescriptor to preload into the decoder state as the current channel
      * @return list of configured decoders
      */
     public static List<Module> getModules(ChannelMapModel channelMapModel, Channel channel, AliasModel aliasModel,
                                           UserPreferences userPreferences, TrafficChannelManager trafficChannelManager,
                                           IChannelDescriptor channelDescriptor)
     {
-        List<Module> modules = getPrimaryModules(channelMapModel, channel, aliasModel, userPreferences,
-                trafficChannelManager, channelDescriptor);
-        modules.addAll(getAuxiliaryDecoders(channel.getAuxDecodeConfiguration()));
-        return modules;
+        return getModules(channelMapModel, channel, aliasModel, userPreferences, trafficChannelManager,
+                channelDescriptor, null);
     }
 
     /**
@@ -150,7 +178,7 @@ public class DecoderFactory
      */
     public static List<Module> getPrimaryModules(ChannelMapModel channelMapModel, Channel channel, AliasModel aliasModel,
                                                  UserPreferences userPreferences, TrafficChannelManager trafficChannelManager,
-                                                 IChannelDescriptor channelDescriptor)
+                                                 IChannelDescriptor channelDescriptor, DecryptionEngine decryptionEngine)
     {
         List<Module> modules = new ArrayList<>();
 
@@ -169,7 +197,7 @@ public class DecoderFactory
                 break;
             case DMR:
                 processDMR(channel, userPreferences, modules, aliasList, (DecodeConfigDMR)decodeConfig,
-                    trafficChannelManager, channelDescriptor);
+                    trafficChannelManager, channelDescriptor, decryptionEngine);
                 break;
             case NBFM:
                 processNBFM(channel, modules, aliasList, decodeConfig);
@@ -188,10 +216,10 @@ public class DecoderFactory
                 processPassport(channel, modules, aliasList, decodeConfig);
                 break;
             case P25_PHASE1:
-                processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
+                processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor, decryptionEngine);
                 break;
             case P25_PHASE2:
-                processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
+                processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor, decryptionEngine);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -211,7 +239,7 @@ public class DecoderFactory
      */
     private static void processP25Phase2(Channel channel, UserPreferences userPreferences, List<Module> modules,
                                          AliasList aliasList, TrafficChannelManager trafficChannelManager,
-                                         IChannelDescriptor channelDescriptor)
+                                         IChannelDescriptor channelDescriptor, DecryptionEngine decryptionEngine)
     {
 
         modules.add(new P25P2DecoderHDQPSK((DecodeConfigP25Phase2)channel.getDecodeConfiguration()));
@@ -246,8 +274,15 @@ public class DecoderFactory
         decoderState2.setCurrentChannel(channelDescriptor);
         modules.add(decoderState1);
         modules.add(decoderState2);
-        modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList));
-        modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList));
+        P25P2AudioModule am1 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList);
+        P25P2AudioModule am2 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList);
+        if(decryptionEngine != null)
+        {
+            am1.setDecryptionEngine(decryptionEngine);
+            am2.setDecryptionEngine(decryptionEngine);
+        }
+        modules.add(am1);
+        modules.add(am2);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -268,7 +303,7 @@ public class DecoderFactory
      */
     private static void processP25Phase1(Channel channel, UserPreferences userPreferences, List<Module> modules,
                                          AliasList aliasList, TrafficChannelManager trafficChannelManager,
-                                         IChannelDescriptor channelDescriptor)
+                                         IChannelDescriptor channelDescriptor, DecryptionEngine decryptionEngine)
     {
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1)
         {
@@ -302,7 +337,12 @@ public class DecoderFactory
             mLog.warn("Expected non-null traffic channel manager for channel " + channel.getName());
         }
 
-        modules.add(new P25P1AudioModule(userPreferences, aliasList));
+        P25P1AudioModule audioModule = new P25P1AudioModule(userPreferences, aliasList);
+        if(decryptionEngine != null)
+        {
+            audioModule.setDecryptionEngine(decryptionEngine);
+        }
+        modules.add(audioModule);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -478,7 +518,8 @@ public class DecoderFactory
      */
     private static void processDMR(Channel channel, UserPreferences userPreferences, List<Module> modules,
                                    AliasList aliasList, DecodeConfigDMR decodeConfig,
-                                   TrafficChannelManager trafficChannelManager, IChannelDescriptor channelDescriptor)
+                                   TrafficChannelManager trafficChannelManager, IChannelDescriptor channelDescriptor,
+                                   DecryptionEngine decryptionEngine)
     {
         modules.add(new DMRDecoder(decodeConfig, channel.isTrafficChannel()));
 
@@ -554,8 +595,15 @@ public class DecoderFactory
 
         modules.add(state1);
         modules.add(state2);
-        modules.add(new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_1));
-        modules.add(new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_2));
+        DMRAudioModule dmrAm1 = new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_1);
+        DMRAudioModule dmrAm2 = new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_2);
+        if(decryptionEngine != null)
+        {
+            dmrAm1.setDecryptionEngine(decryptionEngine);
+            dmrAm2.setDecryptionEngine(decryptionEngine);
+        }
+        modules.add(dmrAm1);
+        modules.add(dmrAm2);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
