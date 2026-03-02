@@ -71,7 +71,7 @@ public class DecryptionEngineTest
         DecryptionEngine engine = new DecryptionEngine();
 
         byte[] key = new byte[]{0x0A, 0x0B, 0x0C, 0x0D, 0x0E};
-        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90};
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
         engine.addKey("0002", "RC4", key);
 
         byte[] plaintext = new byte[18]; // typical IMBE frame size
@@ -119,7 +119,7 @@ public class DecryptionEngineTest
         byte[] key = new byte[]{0x05, 0x06, 0x07, 0x08, 0x09};
         engine.addKey("0003", "RC4", key);
 
-        byte[] plaintext = new byte[]{0xAA, 0xBB, 0xCC};
+        byte[] plaintext = new byte[]{(byte)0xAA, (byte)0xBB, (byte)0xCC};
         byte[] ciphertext = encryptRC4Direct(key, plaintext);
 
         // Passing null MI should fall back to plain decrypt
