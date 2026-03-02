@@ -29,10 +29,12 @@ import java.text.SimpleDateFormat
  * - Optional: install and configure Gradle 8.10+
  *
  * Scenario 1: run the application via gradle command line from the source code root directory:
- * command: ./gradlew run
+ * Linux/Mac command: ./gradlew run
+ * Windows command:  gradlew.bat run
  *
  * Scenario 2: create an application release for the current operating system
- * command: ./gradlew runtimeZipCurrent
+ * Linux/Mac command: ./gradlew runtimeZipCurrent
+ * Windows command:  gradlew.bat runtimeZipCurrent
  * Note: release image is located in the /build/image/ directory
  *
  * Scenario 3: create releases for Linux and OSX operating systems using downloaded JDKs
