@@ -249,7 +249,7 @@ tasks.named('startScripts') {
         def isJfxJar = { String entry -> jfxJarPattern.matcher(entry.replaceAll(/.*[\\\/]/, '')).matches() }
 
         // ----- Windows bat script -----
-        def batFile = windowsScript.get().asFile
+        def batFile = windowsScript
         def batLines = batFile.readLines('UTF-8')
         List<String> newBatLines = []
 
@@ -274,7 +274,7 @@ tasks.named('startScripts') {
         batFile.text = newBatLines.join('\r\n') + '\r\n'
 
         // ----- Unix shell script -----
-        def shFile = unixScript.get().asFile
+        def shFile = unixScript
         def shLines = shFile.readLines('UTF-8')
         List<String> newShLines = []
 
