@@ -133,6 +133,8 @@ public class DecryptionEngine
 
     private byte[] decryptDES(byte[] rawKey, byte[] ciphertext) throws Exception
     {
+        // ECB mode is used here for compatibility with P25/DMR radio protocol encrypted payloads,
+        // which do not use IV-based modes for over-the-air transmission.
         SecretKey secretKey = new SecretKeySpec(rawKey, "DES");
         Cipher cipher = Cipher.getInstance("DES/ECB/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
@@ -141,6 +143,8 @@ public class DecryptionEngine
 
     private byte[] decryptAES(byte[] rawKey, byte[] ciphertext) throws Exception
     {
+        // ECB mode is used here for compatibility with P25/DMR radio protocol encrypted payloads,
+        // which do not use IV-based modes for over-the-air transmission.
         SecretKey secretKey = new SecretKeySpec(rawKey, "AES");
         Cipher cipher = Cipher.getInstance("AES/ECB/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);

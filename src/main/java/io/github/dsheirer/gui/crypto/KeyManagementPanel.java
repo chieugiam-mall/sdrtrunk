@@ -23,9 +23,8 @@ package io.github.dsheirer.gui.crypto;
 import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.crypto.EncryptionKey;
 import java.awt.Font;
-import java.util.HexFormat;
+import java.util.Arrays;
 import java.util.List;
-import javax.swing.DefaultListSelectionModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
@@ -140,46 +139,64 @@ public class KeyManagementPanel extends JPanel
     {
         String kid = mKidField.getText().trim();
         String algorithm = (String) mAlgorithmCombo.getSelectedItem();
-        String hexKey = new String(mKeyField.getPassword()).trim();
+        char[] passwordChars = mKeyField.getPassword();
 
-        if(kid.isEmpty())
-        {
-            setStatus("KID cannot be empty.", true);
-            return;
-        }
-
-        if(hexKey.isEmpty())
-        {
-            setStatus("Key cannot be empty.", true);
-            return;
-        }
-
-        // Check for duplicate KID
-        for(EncryptionKey existing : mDecryptionEngine.getKeys())
-        {
-            if(existing.getKid().equalsIgnoreCase(kid))
-            {
-                setStatus("KID '" + kid + "' already exists. Remove it first.", true);
-                return;
-            }
-        }
-
-        byte[] keyBytes;
         try
         {
-            keyBytes = parseHex(hexKey);
-        }
-        catch(IllegalArgumentException ex)
-        {
-            setStatus("Invalid hex key: " + ex.getMessage(), true);
-            return;
-        }
+            if(kid.isEmpty())
+            {
+                setStatus("KID cannot be empty.", true);
+                return;
+            }
 
-        mDecryptionEngine.addKey(kid, algorithm, keyBytes);
-        mKeyField.setText("");
-        mKidField.setText("");
-        refreshTable();
-        setStatus("Key added for KID '" + kid + "'.", false);
+            if(passwordChars.length == 0)
+            {
+                setStatus("Key cannot be empty.", true);
+                return;
+            }
+
+            // Check for duplicate KID
+            for(EncryptionKey existing : mDecryptionEngine.getKeys())
+            {
+                if(existing.getKid().equalsIgnoreCase(kid))
+                {
+                    setStatus("KID '" + kid + "' already exists. Remove it first.", true);
+                    return;
+                }
+            }
+
+            // Convert char[] to trimmed char[] without creating a String
+            int start = 0;
+            int end = passwordChars.length;
+            while(start < end && passwordChars[start] == ' ') start++;
+            while(end > start && passwordChars[end - 1] == ' ') end--;
+            char[] hexChars = Arrays.copyOfRange(passwordChars, start, end);
+
+            byte[] keyBytes;
+            try
+            {
+                keyBytes = parseHex(hexChars);
+            }
+            catch(IllegalArgumentException ex)
+            {
+                setStatus("Invalid hex key: " + ex.getMessage(), true);
+                return;
+            }
+            finally
+            {
+                Arrays.fill(hexChars, '\0');
+            }
+
+            mDecryptionEngine.addKey(kid, algorithm, keyBytes);
+            mKeyField.setText("");
+            mKidField.setText("");
+            refreshTable();
+            setStatus("Key added for KID '" + kid + "'.", false);
+        }
+        finally
+        {
+            Arrays.fill(passwordChars, '\0');
+        }
     }
 
     /**
@@ -228,28 +245,34 @@ public class KeyManagementPanel extends JPanel
     }
 
     /**
-     * Parses a hex string into a byte array.
+     * Parses a hex char array into a byte array without creating an intermediate String.
      *
-     * @param hex Hex string (must have even length, valid hex digits)
+     * @param hex Hex char array (must have even length, valid hex digits)
      * @return Parsed byte array
-     * @throws IllegalArgumentException if the string is not valid hex
+     * @throws IllegalArgumentException if the array is not valid hex
      */
-    private static byte[] parseHex(String hex)
+    private static byte[] parseHex(char[] hex)
     {
-        String cleaned = hex.replaceAll("\\s", "");
-
-        if(cleaned.length() % 2 != 0)
+        if(hex.length % 2 != 0)
         {
             throw new IllegalArgumentException("Hex string must have an even number of characters");
         }
 
-        try
+        byte[] result = new byte[hex.length / 2];
+
+        for(int i = 0; i < hex.length; i += 2)
         {
-            return HexFormat.of().parseHex(cleaned);
+            int high = Character.digit(hex[i], 16);
+            int low = Character.digit(hex[i + 1], 16);
+
+            if(high == -1 || low == -1)
+            {
+                throw new IllegalArgumentException("Invalid hex characters in key");
+            }
+
+            result[i / 2] = (byte) ((high << 4) | low);
         }
-        catch(IllegalArgumentException e)
-        {
-            throw new IllegalArgumentException("Invalid hex characters in key");
-        }
+
+        return result;
     }
 }
