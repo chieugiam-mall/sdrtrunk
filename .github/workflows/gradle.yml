@@ -26,9 +26,6 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '25'
-          distribution: 'liberica'
-          java-package: 'jdk+fx'
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+          distribution: 'temurin'
       - name: Build with Gradle
         run: ./gradlew clean build
