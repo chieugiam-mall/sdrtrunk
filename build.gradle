@@ -195,6 +195,26 @@ application {
     }
 }
 
+/**
+ * Add JavaFX JARs to the module path when running the application.
+ * JavaFX is provided as Maven dependencies (JARs on the classpath by default) but must be
+ * on the module path so the JVM can resolve them as named modules via --add-modules.
+ */
+tasks.named('run') {
+    doFirst {
+        def jfxPattern = ~/^javafx-.*\.jar$/
+        def jfxJars = configurations.runtimeClasspath.files.findAll {
+            it.name ==~ jfxPattern
+        }
+        if (!jfxJars.isEmpty()) {
+            def modulePath = jfxJars.collect { it.absolutePath }.join(File.pathSeparator)
+            jvmArgs "--module-path=${modulePath}"
+            // Remove JavaFX JARs from classpath to avoid split-package conflicts
+            classpath = classpath.filter { !(it.name ==~ jfxPattern) }
+        }
+    }
+}
+
 test {
     jvmArgs = jvmArgsTest
 }
