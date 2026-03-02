@@ -95,10 +95,10 @@ dependencies {
     implementation "org.openjfx:javafx-swing:25:${jfxClassifier}"
 
     // JUnit Tests
-    testImplementation(platform("org.junit:junit-bom:6.0.1"))
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:6.0.1'
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:6.0.1")
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:6.0.1")
+    testImplementation(platform("org.junit:junit-bom:5.12.0"))
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.12.0'
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.12.0")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.12.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     //Jitpack imports
@@ -279,7 +279,7 @@ def jdk_download_windows_aarch64 = jdk_download_base + "windows-aarch64-full.zip
  * @param jvmArgs to use (windows or linux)
  * @return configured task.
  */
-def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
+def configure(rt, List<String> jvmArgs) {
     //Use the correct set of JVM arguments
     rt.extension.launcherData.get().jvmArgs = jvmArgs
 
@@ -297,7 +297,7 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     rt.extension.addOptions('--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages')
 
     //Runtime images have auto appended version in image zip name.  Override to include version in single target image.
-    rt.extension.imageZip.set(file("$buildDir/image/sdr-trunk.zip"))
+    rt.extension.imageZip.set(file("${layout.buildDirectory.get().asFile}/image/sdr-trunk.zip"))
 }
 
 /**
@@ -310,7 +310,6 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
  * Usage: ./gradlew runtimeZipCurrent   (linux - using gradlew)
  */
 tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
-    def arch = System.properties.getProperty("os.arch")
     def javaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome().toString()
 
     if(os.isWindows()) {
