@@ -230,6 +230,75 @@ tasks.named('run') {
     }
 }
 
+/**
+ * Customize the generated start scripts (sdr-trunk.bat / sdr-trunk) produced by the Gradle
+ * application plugin to move JavaFX JARs from the classpath to the module path.
+ *
+ * The jvmArgsWindows/jvmArgsLinux lists contain --add-modules=javafx.base,... and
+ * --add-exports=javafx.base/... which require JavaFX to be on the module path (not just the
+ * classpath).  The default application plugin script puts every JAR on the classpath, which
+ * causes a fatal "module javafx.base not found" error at startup when using a standard JDK
+ * such as Temurin 25.
+ *
+ * We also skip injecting the module path when the running JDK already bundles JavaFX
+ * (e.g. Liberica Full JDK) to avoid duplicate-module errors.
+ */
+tasks.named('startScripts') {
+    doLast {
+        def jfxJarPattern = ~/javafx-.*\.jar/
+        def isJfxJar = { String entry -> jfxJarPattern.matcher(entry.replaceAll(/.*[\\\/]/, '')).matches() }
+
+        // ----- Windows bat script -----
+        def batFile = windowsScript.get().asFile
+        def batLines = batFile.readLines('UTF-8')
+        List<String> newBatLines = []
+
+        batLines.each { String line ->
+            if (line.startsWith('set CLASSPATH=')) {
+                def cp = line.substring('set CLASSPATH='.length())
+                def entries = cp.split(';') as List<String>
+                def jfxEntries    = entries.findAll { e -> isJfxJar(e) }
+                def nonJfxEntries = entries.findAll { e -> !isJfxJar(e) }
+                if (!jfxEntries.isEmpty()) {
+                    newBatLines << '@rem JavaFX JARs moved to module path; required by --add-modules and --add-exports JVM args'
+                    newBatLines << "set JAVAFX_MODULE_PATH=${jfxEntries.join(';')}"
+                    newBatLines << 'if exist "%JAVA_HOME%\\jmods\\javafx.base.jmod" set JAVAFX_MODULE_PATH='
+                    newBatLines << 'if exist "%JAVA_HOME%\\lib\\javafx.base.jar" set JAVAFX_MODULE_PATH='
+                    newBatLines << 'if not "%JAVAFX_MODULE_PATH%"=="" set SDR_TRUNK_OPTS=--module-path "%JAVAFX_MODULE_PATH%" %SDR_TRUNK_OPTS%'
+                }
+                newBatLines << "set CLASSPATH=${nonJfxEntries.join(';')}"
+            } else {
+                newBatLines << line
+            }
+        }
+        batFile.text = newBatLines.join('\r\n') + '\r\n'
+
+        // ----- Unix shell script -----
+        def shFile = unixScript.get().asFile
+        def shLines = shFile.readLines('UTF-8')
+        List<String> newShLines = []
+
+        shLines.each { String line ->
+            if (line.startsWith('CLASSPATH=')) {
+                def cp = line.substring('CLASSPATH='.length())
+                def entries = cp.split(':') as List<String>
+                def jfxEntries    = entries.findAll { e -> isJfxJar(e) }
+                def nonJfxEntries = entries.findAll { e -> !isJfxJar(e) }
+                if (!jfxEntries.isEmpty()) {
+                    newShLines << '# JavaFX JARs moved to module path; required by --add-modules and --add-exports JVM args'
+                    newShLines << "JAVAFX_MODULE_PATH=${jfxEntries.join(':')}"
+                    newShLines << 'if [ -f "$JAVA_HOME/jmods/javafx.base.jmod" ] || [ -f "$JAVA_HOME/lib/javafx.base.jar" ]; then JAVAFX_MODULE_PATH=""; fi'
+                    newShLines << 'if [ -n "$JAVAFX_MODULE_PATH" ]; then SDR_TRUNK_OPTS="--module-path $JAVAFX_MODULE_PATH $SDR_TRUNK_OPTS"; fi'
+                }
+                newShLines << "CLASSPATH=${nonJfxEntries.join(':')}"
+            } else {
+                newShLines << line
+            }
+        }
+        shFile.text = newShLines.join('\n') + '\n'
+    }
+}
+
 test {
     jvmArgs = jvmArgsTest
 }
