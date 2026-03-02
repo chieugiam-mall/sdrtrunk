@@ -25,7 +25,7 @@ import java.text.SimpleDateFormat
  * Instructions for building/compiling the sdrtrunk application.
  *
  * Prerequisites:
- * Install and configure an OpenJDK version 22+ that includes the JavaFX modules (e.g. Bellsoft Liberica JDK)
+ * Install and configure an OpenJDK version 25+ (e.g. Temurin, Liberica, Zulu) - JavaFX is provided via Maven
  * - Optional: install and configure Gradle 8.10+
  *
  * Scenario 1: run the application via gradle command line from the source code root directory:
@@ -48,6 +48,7 @@ plugins {
     id 'java'
     id 'idea'
     id 'org.beryx.runtime' version '2.0.1'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
 }
 
 repositories {
@@ -63,6 +64,12 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
+}
+
+//JavaFX modules required by the application - provided via Maven so any standard JDK works
+javafx {
+    version = '24.0.1'
+    modules = ['javafx.base', 'javafx.controls', 'javafx.graphics', 'javafx.swing']
 }
 
 sourceSets {
