@@ -32,14 +32,12 @@ import java.util.Collections;
 import java.util.List;
 
 @JacksonXmlRootElement(localName = "SDRTrunk_settings")
+@SuppressWarnings("deprecation")
 public class Settings
 {
     private List<Setting> mSettings = new ArrayList<Setting>();
 
     private List<TunerConfiguration> mTunerConfiguration = new ArrayList<TunerConfiguration>();
-
-    //No longer used
-    private List<RecordingConfiguration> mRecordingConfigurations = new ArrayList<RecordingConfiguration>();
 
     public Settings()
     {
