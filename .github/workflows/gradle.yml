@@ -32,7 +32,34 @@ jobs:
       - name: Build with Gradle
         if: runner.os != 'Windows'
         run: ./gradlew clean build
+      - name: Verify generated start scripts (Linux/Mac)
+        if: runner.os != 'Windows'
+        run: |
+          test -f build/scripts/sdr-trunk || { echo "ERROR: sdr-trunk script not found"; exit 1; }
+          grep -q "JAVAFX_MODULE_PATH" build/scripts/sdr-trunk || { echo "ERROR: JAVAFX_MODULE_PATH not found in sdr-trunk"; exit 1; }
+          grep -q "module-path" build/scripts/sdr-trunk || { echo "ERROR: --module-path not found in sdr-trunk"; exit 1; }
+          test -f build/scripts/sdr-trunk.bat || { echo "ERROR: sdr-trunk.bat not found"; exit 1; }
+          grep -q "JAVAFX_MODULE_PATH" build/scripts/sdr-trunk.bat || { echo "ERROR: JAVAFX_MODULE_PATH not found in sdr-trunk.bat"; exit 1; }
+          grep -q "module-path" build/scripts/sdr-trunk.bat || { echo "ERROR: --module-path not found in sdr-trunk.bat"; exit 1; }
+          echo "Start scripts verified successfully"
       - name: Build with Gradle (Windows)
         if: runner.os == 'Windows'
         run: gradlew.bat clean build
         shell: cmd
+      - name: Verify generated start scripts (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          if not exist "build\scripts\sdr-trunk.bat" (
+            echo ERROR: sdr-trunk.bat not found
+            exit /b 1
+          )
+          findstr /c:"JAVAFX_MODULE_PATH" "build\scripts\sdr-trunk.bat" > nul || (
+            echo ERROR: JAVAFX_MODULE_PATH not found in sdr-trunk.bat
+            exit /b 1
+          )
+          findstr /c:"module-path" "build\scripts\sdr-trunk.bat" > nul || (
+            echo ERROR: --module-path not found in sdr-trunk.bat
+            exit /b 1
+          )
+          echo sdr-trunk.bat verified successfully
