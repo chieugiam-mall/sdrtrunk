@@ -21,6 +21,8 @@ package io.github.dsheirer.gui;
 import com.jidesoft.plaf.LookAndFeelFactory;
 import com.jidesoft.swing.JideSplitPane;
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.crypto.DecryptionEngine;
+import io.github.dsheirer.gui.crypto.KeyManagementPanel;
 import io.github.dsheirer.audio.DuplicateCallDetector;
 import io.github.dsheirer.audio.broadcast.AudioStreamingManager;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
@@ -95,6 +97,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -142,6 +145,7 @@ public class SDRTrunk implements Listener<TunerEvent>
     private JFXPanel mResourceStatusPanel;
 
     private String mTitle;
+    private DecryptionEngine mDecryptionEngine = new DecryptionEngine();
 
     public SDRTrunk()
     {
@@ -595,6 +599,20 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(new ResourceStatusVisibleMenuItem());
 
         menuBar.add(viewMenu);
+
+        JMenu securityMenu = new JMenu("Security");
+
+        JMenuItem keyManagementItem = new JMenuItem("Key Management...");
+        keyManagementItem.addActionListener(e -> {
+            JDialog dialog = new JDialog(mMainGui, "Key Management", false);
+            dialog.setContentPane(new KeyManagementPanel(mDecryptionEngine));
+            dialog.pack();
+            dialog.setLocationRelativeTo(mMainGui);
+            dialog.setVisible(true);
+        });
+        securityMenu.add(keyManagementItem);
+
+        menuBar.add(securityMenu);
 
         JMenuItem screenCaptureItem = new JMenuItem("Screen Capture");
         screenCaptureItem.setIcon(IconFontSwing.buildIcon(FontAwesome.CAMERA, 12));
