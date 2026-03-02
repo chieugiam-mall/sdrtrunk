@@ -74,7 +74,25 @@ test {
     useJUnitPlatform()
 }
 
+def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.currentOperatingSystem
+def arch = System.properties.getProperty("os.arch")
+// Note: JVM reports ARM64 as 'aarch64' on all platforms (including macOS Apple Silicon)
+def jfxClassifier
+if (os.isWindows()) {
+    jfxClassifier = "win"
+} else if (os.isMacOsX()) {
+    jfxClassifier = arch == "aarch64" ? "mac-aarch64" : "mac"
+} else {
+    jfxClassifier = arch == "aarch64" ? "linux-aarch64" : "linux"
+}
+
 dependencies {
+
+    // JavaFX - explicit dependencies so the project builds with any JDK (not only Liberica JDK+FX)
+    implementation "org.openjfx:javafx-base:25:${jfxClassifier}"
+    implementation "org.openjfx:javafx-controls:25:${jfxClassifier}"
+    implementation "org.openjfx:javafx-graphics:25:${jfxClassifier}"
+    implementation "org.openjfx:javafx-swing:25:${jfxClassifier}"
 
     // JUnit Tests
     testImplementation(platform("org.junit:junit-bom:6.0.1"))
@@ -122,8 +140,6 @@ dependencies {
     implementation 'org.usb4java:usb4java-javax:1.3.0'
     implementation 'pl.edu.icm:JLargeArrays:1.6'
 }
-
-def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.currentOperatingSystem
 
 /**
  * This is needed for the JDK23 vector API ... until it moves out of incubation or preview
