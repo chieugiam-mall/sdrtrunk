@@ -201,16 +201,17 @@ application {
  * on the module path so the JVM can resolve them as named modules via --add-modules.
  */
 tasks.named('run') {
+    def jfxPattern = ~/^javafx-.*\.jar$/
+    def jfxFiles = configurations.runtimeClasspath.filter { it.name ==~ jfxPattern }
+
+    // Remove JavaFX JARs from classpath to avoid split-package conflicts
+    classpath = classpath.filter { !(it.name ==~ jfxPattern) }
+
+    // Add JavaFX JARs to the module path at execution time
     doFirst {
-        def jfxPattern = ~/^javafx-.*\.jar$/
-        def jfxJars = configurations.runtimeClasspath.files.findAll {
-            it.name ==~ jfxPattern
-        }
-        if (!jfxJars.isEmpty()) {
-            def modulePath = jfxJars.collect { it.absolutePath }.join(File.pathSeparator)
-            jvmArgs "--module-path=${modulePath}"
-            // Remove JavaFX JARs from classpath to avoid split-package conflicts
-            classpath = classpath.filter { !(it.name ==~ jfxPattern) }
+        def path = jfxFiles.asPath
+        if (!path.isEmpty()) {
+            jvmArgs "--module-path=${path}"
         }
     }
 }
