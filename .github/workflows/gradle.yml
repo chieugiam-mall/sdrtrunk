@@ -28,4 +28,9 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
       - name: Build with Gradle
+        if: runner.os != 'Windows'
         run: ./gradlew clean build
+      - name: Build with Gradle (Windows)
+        if: runner.os == 'Windows'
+        run: gradlew.bat clean build
+        shell: cmd
