@@ -45,6 +45,19 @@ it let's you preview the most recent changes and fixes before the next software 
 playlist(s) before you use the nightly builds.**  Note: the nightly release is updated each time code changes are 
 committed to the code base, so it's not really 'nightly' as much as it is 'current'.
 
+## Encryption Key Management
+
+SDRTrunk supports decryption of encrypted radio traffic (P25, DMR) using AES, DES, and RC4 keys.
+To open the **Encryption Key Management** dialog:
+
+1. Launch SDRTrunk normally.
+2. In the menu bar, click **Security** → **Key Management...** (or press **Alt+S**, then **K**).
+3. In the dialog you can:
+   - **Add** a key by entering a Key ID (KID), selecting the algorithm (AES/DES/RC4), and typing the key as a hex string, then clicking **Add Key**.
+   - **Remove** a key by selecting it in the table and clicking **Remove Selected**.
+
+Keys are never shown in plain text; the table displays only a masked representation.
+
 ## Minimum System Requirements
 * **Operating System:** Windows (~~32 or~~ 64-bit), Linux (~~32 or~~ 64-bit) or Mac (64-bit, 12.x or higher)
 * **CPU:** 4-core

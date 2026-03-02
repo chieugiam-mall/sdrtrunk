@@ -601,8 +601,12 @@ public class SDRTrunk implements Listener<TunerEvent>
         menuBar.add(viewMenu);
 
         JMenu securityMenu = new JMenu("Security");
+        securityMenu.setMnemonic(KeyEvent.VK_S);
 
         JMenuItem keyManagementItem = new JMenuItem("Key Management...");
+        keyManagementItem.setIcon(IconFontSwing.buildIcon(FontAwesome.KEY, 12));
+        keyManagementItem.setMnemonic(KeyEvent.VK_K);
+        keyManagementItem.setToolTipText("Open the Encryption Key Management dialog to add or remove decryption keys");
         keyManagementItem.addActionListener(e -> {
             JDialog dialog = new JDialog(mMainGui, "Key Management", false);
             dialog.setContentPane(new KeyManagementPanel(mDecryptionEngine));
