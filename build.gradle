@@ -32,16 +32,25 @@ import java.text.SimpleDateFormat
  * Linux/Mac command: ./gradlew run
  * Windows command:  gradlew.bat run
  *
- * Scenario 2: create an application release for the current operating system
+ * Scenario 2: compile, test, and create a standard distribution for the current operating system
+ * Linux/Mac command: ./gradlew build
+ * Windows command:  gradlew.bat build
+ * Note: distribution zip/tar archives are created in build/distributions/.
+ *       To run the application after building:
+ *         a) Extract the zip, then run bin/sdr-trunk (Linux/Mac) or bin\sdr-trunk.bat (Windows), OR
+ *         b) Run ./gradlew installDist (Linux/Mac) / gradlew.bat installDist (Windows), then run
+ *            build/install/sdr-trunk/bin/sdr-trunk or build\install\sdr-trunk\bin\sdr-trunk.bat
+ *
+ * Scenario 3: create an application release for the current operating system
  * Linux/Mac command: ./gradlew runtimeZipCurrent
  * Windows command:  gradlew.bat runtimeZipCurrent
  * Note: release image is located in the /build/image/ directory
  *
- * Scenario 3: create releases for Linux and OSX operating systems using downloaded JDKs
+ * Scenario 4: create releases for Linux and OSX operating systems using downloaded JDKs
  * command: ./gradlew runtimeZipOthers
  * Note: release images are located in the /build/image/ directory
  *
- * Scenario 4: create release for Windows operating system using downloaded JDK
+ * Scenario 5: create release for Windows operating system using downloaded JDK
  * command: ./gradlew runtimeZipWindows
  * Note: release image is located in the /build/image/ directory
  */
