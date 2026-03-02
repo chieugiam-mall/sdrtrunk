@@ -58,7 +58,7 @@ public abstract class EncryptionKey implements Comparable<EncryptionKey>
     @Override
     public int compareTo(EncryptionKey other)
     {
-        if(getAlgorithm() == other.getKey())
+        if(getAlgorithm() == other.getAlgorithm())
         {
             return Integer.compare(getKey(), other.getKey());
         }
