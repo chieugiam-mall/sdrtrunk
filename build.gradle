@@ -169,7 +169,6 @@ def jvmArgsWindows =
          '--enable-preview', //Project Panama Vector API is still in incubator
          '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
 /**
@@ -180,7 +179,6 @@ def jvmArgsLinux =
          '--add-modules=jdk.incubator.vector',   //Needed while Project Panama API is still in incubator
          '--add-modules=javafx.base,javafx.controls,javafx.graphics,javafx.swing', //JavaFX modules required by --add-exports and --enable-native-access below
          '--enable-preview', //Project Panama Vector & Foreign Function APIs remain in incubator
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED'] //SDRPlay API library path
 
@@ -193,8 +191,7 @@ def jvmArgsLinux =
 def jvmArgsTest =
         ['--add-modules=jdk.incubator.vector',   //Project Panama Vector API is still in incubator
          '--enable-preview', //Project Panama Vector API is still in incubator
-         '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
-         '-XX:+UseCompactObjectHeaders']  //JDK25 - use compact object headers
+         '--enable-native-access=ALL-UNNAMED'] //Suppress unsafe warnings for FFM API Foreign Memory calls
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
