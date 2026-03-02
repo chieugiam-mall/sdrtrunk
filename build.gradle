@@ -168,6 +168,19 @@ def jvmArgsLinux =
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED'] //SDRPlay API library path
 
+/**
+ * JVM Arguments for running unit tests.  Omits JavaFX module references (--add-exports=javafx.base/...,
+ * --add-modules=javafx.base,..., --enable-native-access=javafx.graphics) because unit tests do not use
+ * JavaFX UI components and those modules are not on the module path during test execution, which causes
+ * "WARNING: Unknown module" messages from the JVM.
+ */
+def jvmArgsTest =
+        ['--add-modules=jdk.incubator.vector',   //Project Panama Vector API is still in incubator
+         '--enable-preview', //Project Panama Vector API is still in incubator
+         '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
+         '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
+         '-XX:+UseCompactObjectHeaders']  //JDK25 - use compact object headers
+
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
 
@@ -180,12 +193,7 @@ application {
 }
 
 test {
-    if(os.isWindows()) {
-        jvmArgs = jvmArgsWindows
-    }
-    else {
-        jvmArgs = jvmArgsLinux
-    }
+    jvmArgs = jvmArgsTest
 }
 
 jar {
