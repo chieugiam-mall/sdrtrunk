@@ -452,6 +452,74 @@ public class DecryptionEngineTest
     }
 
     /**
+     * Tests that DES decryption works with a non-block-aligned ciphertext (18-byte IMBE frame).
+     * The engine should zero-pad to a block boundary, decrypt, and trim back to the original length.
+     */
+    @Test
+    public void testDESDecryptNonBlockAligned()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x23, 0x45, 0x67, (byte)0x89, (byte)0xAB, (byte)0xCD, (byte)0xEF};
+        engine.addKey("CC10", "DES", key);
+
+        // Simulate an 18-byte IMBE frame (18 % 8 != 0)
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 1);
+        }
+
+        // Encrypt the padded block, then trim to 18 bytes to simulate over-the-air ciphertext
+        byte[] padded = new byte[24]; // next multiple of 8 after 18
+        System.arraycopy(plaintext, 0, padded, 0, plaintext.length);
+        byte[] encryptedPadded = encryptDESDirect(key, padded);
+        byte[] ciphertext = new byte[18];
+        System.arraycopy(encryptedPadded, 0, ciphertext, 0, 18);
+
+        byte[] decrypted = engine.decrypt("CC10", ciphertext);
+
+        assertEquals(18, decrypted.length, "Decrypted length should match original ciphertext length");
+        assertArrayEquals(plaintext, decrypted, "DES decryption of non-block-aligned ciphertext should recover plaintext");
+    }
+
+    /**
+     * Tests that AES decryption works with a non-block-aligned ciphertext (18-byte payload, 18 % 16 != 0).
+     * The engine should zero-pad to a block boundary, decrypt, and trim back to the original length.
+     */
+    @Test
+    public void testAESDecryptNonBlockAligned()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[16];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(i + 1);
+        }
+        engine.addKey("CC20", "AES", key);
+
+        // 18-byte payload (18 % 16 != 0)
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x10 + i);
+        }
+
+        // Encrypt the padded block, then trim to 18 bytes to simulate over-the-air ciphertext
+        byte[] padded = new byte[32]; // next multiple of 16 after 18
+        System.arraycopy(plaintext, 0, padded, 0, plaintext.length);
+        byte[] encryptedPadded = encryptAESDirect(key, padded);
+        byte[] ciphertext = new byte[18];
+        System.arraycopy(encryptedPadded, 0, ciphertext, 0, 18);
+
+        byte[] decrypted = engine.decrypt("CC20", ciphertext);
+
+        assertEquals(18, decrypted.length, "Decrypted length should match original ciphertext length");
+        assertArrayEquals(plaintext, decrypted, "AES decryption of non-block-aligned ciphertext should recover plaintext");
+    }
+
+    /**
      * Helper method to encrypt bytes using Java's DES/ECB/NoPadding cipher.
      */
     private static byte[] encryptDESDirect(byte[] key, byte[] plaintext)
