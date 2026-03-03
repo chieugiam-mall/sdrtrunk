@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Decryption engine supporting RC4 (ARCFOUR), DES, and AES algorithms.
  * Keys are stored in a thread-safe map keyed by their KID string.
- * KID "0000" is always pre-loaded with a default all-zero AES-128 key.
+ * Keys must be explicitly added via {@link #addKey(String, String, byte[])} before decryption is attempted.
  */
 public class DecryptionEngine
 {
@@ -43,12 +43,11 @@ public class DecryptionEngine
     private final Map<String, EncryptionKey> mKeys = new ConcurrentHashMap<>();
 
     /**
-     * Constructs a DecryptionEngine and registers the default KID "0000"
-     * bootstrap key (all-zero 16-byte AES-128).
+     * Constructs an empty DecryptionEngine.  Keys must be added via {@link #addKey(String, String, byte[])}
+     * before decryption can be performed.
      */
     public DecryptionEngine()
     {
-        addKey("0000", "AES", new byte[16]);
     }
 
     /**
@@ -86,7 +85,7 @@ public class DecryptionEngine
 
         if(key == null)
         {
-            mLog.warn("No key found for KID [{}]", kid);
+            mLog.debug("No key found for KID [{}] - skipping decryption", kid);
             return new byte[0];
         }
 
@@ -138,7 +137,7 @@ public class DecryptionEngine
 
         if(key == null)
         {
-            mLog.warn("No key found for KID [{}]", kid);
+            mLog.debug("No key found for KID [{}] - skipping decryption", kid);
             return new byte[0];
         }
 
