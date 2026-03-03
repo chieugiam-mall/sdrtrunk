@@ -202,6 +202,15 @@ public class SDRTrunk implements Listener<TunerEvent>
         EventLogManager eventLogManager = new EventLogManager(aliasModel, mUserPreferences);
         mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, mIconModel, mDecryptionEngine);
 
+        //Load persisted encryption keys
+        try
+        {
+            mDecryptionEngine.load(getEncryptionKeysPath());
+        }
+        catch(Exception e)
+        {
+            mLog.error("Failed to load encryption keys", e);
+        }
         boolean headless = GraphicsEnvironment.isHeadless();
 
         mDiagnosticMonitor = new DiagnosticMonitor(mUserPreferences, mPlaylistManager.getChannelProcessingManager(),
@@ -609,7 +618,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         keyManagementItem.setToolTipText("Open the Encryption Key Management dialog to add or remove decryption keys");
         keyManagementItem.addActionListener(e -> {
             JDialog dialog = new JDialog(mMainGui, "Key Management", false);
-            dialog.setContentPane(new KeyManagementPanel(mDecryptionEngine));
+            dialog.setContentPane(new KeyManagementPanel(mDecryptionEngine, getEncryptionKeysPath()));
             dialog.pack();
             dialog.setLocationRelativeTo(mMainGui);
             dialog.setVisible(true);
@@ -679,6 +688,14 @@ public class SDRTrunk implements Listener<TunerEvent>
         mTunerManager.stop();
         mLog.info("Shutdown complete.");
         mApplicationLog.stop();
+    }
+
+    /**
+     * Returns the path to the encryption keys JSON configuration file.
+     */
+    private Path getEncryptionKeysPath()
+    {
+        return mUserPreferences.getDirectoryPreference().getDirectoryConfiguration().resolve("encryption_keys.json");
     }
 
     /**

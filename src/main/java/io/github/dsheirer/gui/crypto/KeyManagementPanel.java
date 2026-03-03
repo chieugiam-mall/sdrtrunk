@@ -23,6 +23,8 @@ package io.github.dsheirer.gui.crypto;
 import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.crypto.EncryptionKey;
 import java.awt.Font;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import javax.swing.JButton;
@@ -35,6 +37,7 @@ import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 import net.miginfocom.swing.MigLayout;
 
@@ -48,6 +51,7 @@ public class KeyManagementPanel extends JPanel
     private static final String[] TABLE_COLUMNS = {"KID", "Algorithm", "Key (masked)"};
 
     private final DecryptionEngine mDecryptionEngine;
+    private final Path mConfigPath;
 
     private DefaultTableModel mTableModel;
     private JTable mTable;
@@ -59,11 +63,13 @@ public class KeyManagementPanel extends JPanel
     /**
      * Constructs a KeyManagementPanel wired to the given DecryptionEngine.
      *
-     * @param engine The shared DecryptionEngine singleton
+     * @param engine     The shared DecryptionEngine singleton
+     * @param configPath Path to the JSON file used to persist keys (may be null to disable persistence)
      */
-    public KeyManagementPanel(DecryptionEngine engine)
+    public KeyManagementPanel(DecryptionEngine engine, Path configPath)
     {
         mDecryptionEngine = engine;
+        mConfigPath = configPath;
         initComponents();
         refreshTable();
     }
@@ -120,7 +126,7 @@ public class KeyManagementPanel extends JPanel
         add(addPanel, "wrap");
 
         // Remove button + status
-        JPanel bottomPanel = new JPanel(new MigLayout("insets 0", "[]push[]", "[]"));
+        JPanel bottomPanel = new JPanel(new MigLayout("insets 0", "[]push[][]", "[]"));
 
         mStatusLabel = new JLabel(" ");
         bottomPanel.add(mStatusLabel, "growx");
@@ -128,6 +134,10 @@ public class KeyManagementPanel extends JPanel
         JButton removeButton = new JButton("Remove Selected");
         removeButton.addActionListener(e -> onRemoveSelected());
         bottomPanel.add(removeButton);
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> SwingUtilities.getWindowAncestor(this).dispose());
+        bottomPanel.add(closeButton);
 
         add(bottomPanel, "wrap");
     }
@@ -191,6 +201,7 @@ public class KeyManagementPanel extends JPanel
             mKeyField.setText("");
             mKidField.setText("");
             refreshTable();
+            saveKeys();
             setStatus("Key added for KID '" + kid + "'.", false);
         }
         finally
@@ -215,6 +226,7 @@ public class KeyManagementPanel extends JPanel
         String kid = (String) mTableModel.getValueAt(selectedRow, 0);
         mDecryptionEngine.removeKey(kid);
         refreshTable();
+        saveKeys();
         setStatus("Key removed for KID '" + kid + "'.", false);
     }
 
@@ -242,6 +254,26 @@ public class KeyManagementPanel extends JPanel
     {
         mStatusLabel.setText(message);
         mStatusLabel.setForeground(isError ? java.awt.Color.RED : new java.awt.Color(0, 128, 0));
+    }
+
+    /**
+     * Saves current keys to the configured file path, if set.
+     */
+    private void saveKeys()
+    {
+        if(mConfigPath == null)
+        {
+            return;
+        }
+
+        try
+        {
+            mDecryptionEngine.save(mConfigPath);
+        }
+        catch(IOException e)
+        {
+            setStatus("Failed to save keys to [" + mConfigPath + "]: " + e.getMessage(), true);
+        }
     }
 
     /**
