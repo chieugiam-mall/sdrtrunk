@@ -35,6 +35,8 @@ public class IdentifierEditorFactory
     {
         switch(type)
         {
+            case ENCRYPTION_KEY:
+                return new EncryptionKeyIDEditor();
             case DCS:
                 return new DcsEditor();
             case ESN:
