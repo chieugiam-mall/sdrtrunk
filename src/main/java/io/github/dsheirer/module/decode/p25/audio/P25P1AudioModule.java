@@ -30,6 +30,7 @@ import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncPar
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
+import io.github.dsheirer.module.decode.p25.reference.Encryption;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
@@ -39,6 +40,7 @@ import java.util.List;
 public class P25P1AudioModule extends ImbeAudioModule
 {
     private static final int IMBE_FRAME_SIZE = 18;
+    private static final int UNSET_ALGORITHM = -1;
 
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
@@ -46,6 +48,7 @@ public class P25P1AudioModule extends ImbeAudioModule
     private DecryptionEngine mDecryptionEngine;
     private String mCurrentEncryptionKID;
     private byte[] mCurrentMessageIndicator;
+    private int mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
@@ -83,6 +86,7 @@ public class P25P1AudioModule extends ImbeAudioModule
         getIdentifierCollection().clear();
         mCurrentEncryptionKID = null;
         mCurrentMessageIndicator = null;
+        mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
     }
 
     @Override
@@ -119,6 +123,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                     {
                         mCurrentEncryptionKID = String.format("%04X", hdu.getHeaderData().getEncryptionKey().getValue().getKey());
                         mCurrentMessageIndicator = DecryptionEngine.hexToBytes(hdu.getHeaderData().getMessageIndicator());
+                        mCurrentEncryptionAlgorithm = hdu.getHeaderData().getEncryptionKey().getValue().getAlgorithm();
                     }
                 }
                 else if(message instanceof LDU1Message ldu1)
@@ -139,6 +144,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                         {
                             mCurrentEncryptionKID = String.format("%04X", esp.getEncryptionKey().getValue().getKey());
                             mCurrentMessageIndicator = DecryptionEngine.hexToBytes(esp.getMessageIndicator());
+                            mCurrentEncryptionAlgorithm = esp.getEncryptionKey().getValue().getAlgorithm();
                         }
                     }
 
@@ -190,6 +196,16 @@ public class P25P1AudioModule extends ImbeAudioModule
 
             byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
 
+            //If no key is registered for this KID but the call uses Motorola ADP (40-bit RC4) with null key
+            //ID 0, attempt decryption using a null (all-zero) 5-byte key. Key ID 0 is the P25 null key,
+            //and some Motorola systems transmit ADP-encrypted audio using this null key.
+            if(decrypted.length == 0 && mCurrentEncryptionAlgorithm == Encryption.MOTOROLA_ADP.getValue()
+                && "0000".equals(mCurrentEncryptionKID) && mCurrentMessageIndicator != null
+                && mCurrentMessageIndicator.length > 0)
+            {
+                decrypted = mDecryptionEngine.decryptWithNullKeyRC4(mCurrentMessageIndicator, 5, concatenated);
+            }
+
             if(decrypted.length == concatenated.length)
             {
                 for(int i = 0; i < frames.size(); i++)
@@ -222,6 +238,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                 mCachedLDUMessages.clear();
                 mCurrentEncryptionKID = null;
                 mCurrentMessageIndicator = null;
+                mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
             }
         }
     }
