@@ -504,4 +504,88 @@ public class DecryptionEngineTest
             throw new RuntimeException("Test helper encryption failed", e);
         }
     }
+
+    /**
+     * Tests that decryptRC4WithMI falls back to Key||MI seed order when MI||Key produces all-identical bytes.
+     * This verifies the dual-order feature handles Motorola/OP25 systems that use Key||MI concatenation.
+     *
+     * The plaintext is crafted so that decrypting with the wrong seed (MI||Key) produces all 0x42 bytes
+     * (fails the "not all identical" heuristic), causing the engine to fall back to the correct Key||MI order.
+     */
+    @Test
+    public void testRC4DecryptWithKeyMIOrderFallback()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x0A, 0x0B, 0x0C, 0x0D, 0x0E};
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+        engine.addKey("TEST1", "RC4", key);
+
+        int frameSize = 18;
+
+        // Compute keystreams for both seed orders by encrypting zeros
+        byte[] wrongSeed = new byte[mi.length + key.length]; // MI || Key
+        System.arraycopy(mi, 0, wrongSeed, 0, mi.length);
+        System.arraycopy(key, 0, wrongSeed, mi.length, key.length);
+
+        byte[] correctSeed = new byte[key.length + mi.length]; // Key || MI
+        System.arraycopy(key, 0, correctSeed, 0, key.length);
+        System.arraycopy(mi, 0, correctSeed, key.length, mi.length);
+
+        byte[] wrongKeystream = encryptRC4Direct(wrongSeed, new byte[frameSize]);
+        byte[] correctKeystream = encryptRC4Direct(correctSeed, new byte[frameSize]);
+
+        // Craft plaintext so MI||Key decryption produces all 0x42 (fails the all-identical heuristic).
+        // Construction: plaintext[i] = wrongKeystream[i] XOR correctKeystream[i] XOR 0x42
+        // Then: ciphertext[i] = correctKeystream[i] XOR plaintext[i]
+        //                     = correctKeystream[i] XOR wrongKeystream[i] XOR correctKeystream[i] XOR 0x42
+        //                     = wrongKeystream[i] XOR 0x42
+        // So: RC4_decrypt(wrongSeed, ciphertext)[i] = wrongKeystream[i] XOR ciphertext[i]
+        //                                           = wrongKeystream[i] XOR wrongKeystream[i] XOR 0x42 = 0x42
+        // And: RC4_decrypt(correctSeed, ciphertext)[i] = correctKeystream[i] XOR ciphertext[i] = plaintext[i]
+        byte[] plaintext = new byte[frameSize];
+        for(int i = 0; i < frameSize; i++)
+        {
+            plaintext[i] = (byte)(wrongKeystream[i] ^ correctKeystream[i] ^ 0x42);
+        }
+
+        // Encrypt plaintext with correct seed (Key || MI)
+        byte[] ciphertext = encryptRC4Direct(correctSeed, plaintext);
+
+        // Engine should fall back to Key||MI order and recover plaintext
+        byte[] decrypted = engine.decrypt("TEST1", mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "RC4+MI decryption should fall back to Key||MI seed order");
+    }
+
+    /**
+     * Regression test: verifies that MI||Key seed order (the original P25 ADP behavior) still works correctly.
+     * Ensures the dual-order feature does not break the standard case.
+     */
+    @Test
+    public void testRC4DecryptWithMIKeyOrderRegression()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05};
+        byte[] mi = new byte[]{0xAA, 0xBB, (byte)0xCC, (byte)0xDD, (byte)0xEE, (byte)0xFF, 0x11, 0x22, 0x33};
+        engine.addKey("TEST2", "RC4", key);
+
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 0x20);
+        }
+
+        // Encrypt with MI||Key seed (standard P25 ADP order)
+        byte[] miKeySeed = new byte[mi.length + key.length];
+        System.arraycopy(mi, 0, miKeySeed, 0, mi.length);
+        System.arraycopy(key, 0, miKeySeed, mi.length, key.length);
+        byte[] ciphertext = encryptRC4Direct(miKeySeed, plaintext);
+
+        // Engine should succeed with the primary MI||Key order
+        byte[] decrypted = engine.decrypt("TEST2", mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "RC4+MI decryption should still work with standard MI||Key seed order");
+    }
 }

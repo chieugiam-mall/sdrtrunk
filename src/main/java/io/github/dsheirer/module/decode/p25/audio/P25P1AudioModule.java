@@ -28,6 +28,7 @@ import io.github.dsheirer.crypto.DecryptionEngine;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.integer.IntegerIdentifier;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncParameters;
@@ -40,9 +41,14 @@ import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class P25P1AudioModule extends ImbeAudioModule
 {
+    private static final Logger mLog = LoggerFactory.getLogger(P25P1AudioModule.class);
     private static final int IMBE_FRAME_SIZE = 18;
     private static final int UNSET_ALGORITHM = -1;
 
@@ -53,6 +59,7 @@ public class P25P1AudioModule extends ImbeAudioModule
     private String mCurrentEncryptionKID;
     private byte[] mCurrentMessageIndicator;
     private int mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
+    private Map<Integer, byte[]> mTalkgroupKeyCache = new ConcurrentHashMap<>();
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
@@ -91,6 +98,7 @@ public class P25P1AudioModule extends ImbeAudioModule
         mCurrentEncryptionKID = null;
         mCurrentMessageIndicator = null;
         mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
+        mTalkgroupKeyCache.clear();
     }
 
     @Override
@@ -198,7 +206,32 @@ public class P25P1AudioModule extends ImbeAudioModule
                     Math.min(frame.length, IMBE_FRAME_SIZE));
             }
 
-            byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
+            byte[] decrypted = new byte[0];
+
+            // Check talkgroup key cache first to skip the full decryption cascade when possible
+            Integer talkgroupId = getCurrentTalkgroupId();
+            if(talkgroupId != null && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
+            {
+                byte[] cachedKey = mTalkgroupKeyCache.get(talkgroupId);
+                if(cachedKey != null)
+                {
+                    decrypted = mDecryptionEngine.decryptWithRC4Key(mCurrentMessageIndicator, cachedKey, concatenated);
+                }
+            }
+
+            if(decrypted.length == 0)
+            {
+                decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
+
+                if(decrypted.length > 0 && talkgroupId != null)
+                {
+                    byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
+                    if(rawKey != null)
+                    {
+                        mTalkgroupKeyCache.put(talkgroupId, rawKey);
+                    }
+                }
+            }
 
             //If no key is registered for this KID but the call uses Motorola ADP (40-bit RC4) with null key
             //ID 0, attempt decryption using a null (all-zero) 5-byte key. Key ID 0 is the P25 null key,
@@ -208,12 +241,29 @@ public class P25P1AudioModule extends ImbeAudioModule
                 && mCurrentMessageIndicator.length > 0)
             {
                 decrypted = mDecryptionEngine.decryptWithNullKeyRC4(mCurrentMessageIndicator, 5, concatenated);
+
+                if(decrypted.length > 0 && talkgroupId != null)
+                {
+                    mTalkgroupKeyCache.put(talkgroupId, new byte[5]);
+                }
             }
 
             //If still no key found, check if the talkgroup alias provides a per-talkgroup encryption key.
             if(decrypted.length == 0 && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
             {
-                decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated);
+                byte[][] foundKey = new byte[1][];
+                decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated, foundKey);
+
+                if(decrypted.length > 0 && talkgroupId != null && foundKey[0] != null)
+                {
+                    mTalkgroupKeyCache.put(talkgroupId, foundKey[0]);
+                }
+            }
+
+            if(decrypted.length == 0)
+            {
+                mLog.warn("Failed to decrypt encrypted audio for talkgroup [{}] with KID [{}]",
+                        talkgroupId, mCurrentEncryptionKID);
             }
 
             if(decrypted.length == concatenated.length)
@@ -231,14 +281,30 @@ public class P25P1AudioModule extends ImbeAudioModule
     }
 
     /**
+     * Returns the current talkgroup ID as an Integer, or null if not available.
+     */
+    private Integer getCurrentTalkgroupId()
+    {
+        for(Identifier identifier : getIdentifierCollection().getIdentifiers(Form.TALKGROUP))
+        {
+            if(identifier instanceof IntegerIdentifier intIdent)
+            {
+                return intIdent.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Attempts decryption using a key found in the talkgroup alias, if one is configured.
      * This provides a per-talkgroup key fallback when no key is registered for the transmitted KID.
      *
      * @param messageIndicator per-call message indicator bytes
      * @param ciphertext encrypted IMBE frame bytes
+     * @param foundKeyOut single-element array to receive the raw key bytes that succeeded (may be null on failure)
      * @return decrypted bytes if an alias key was found and decryption succeeded, otherwise empty byte array
      */
-    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext)
+    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext, byte[][] foundKeyOut)
     {
         AliasList aliasList = getAliasList();
         if(aliasList == null)
@@ -249,6 +315,20 @@ public class P25P1AudioModule extends ImbeAudioModule
         for(Identifier identifier : getIdentifierCollection().getIdentifiers(Form.TALKGROUP))
         {
             List<Alias> aliases = aliasList.getAliases(identifier);
+            int encKeyCount = 0;
+            for(Alias alias : aliases)
+            {
+                for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
+                {
+                    if(aliasID instanceof EncryptionKeyID encKeyID && encKeyID.isValid())
+                    {
+                        encKeyCount++;
+                    }
+                }
+            }
+            mLog.debug("tryAliasKeyDecrypt: talkgroup [{}] aliases=[{}] encryptionKeys=[{}]",
+                    identifier, aliases.size(), encKeyCount);
+
             for(Alias alias : aliases)
             {
                 for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
@@ -270,6 +350,10 @@ public class P25P1AudioModule extends ImbeAudioModule
                             }
                             if(result.length > 0)
                             {
+                                if(foundKeyOut != null)
+                                {
+                                    foundKeyOut[0] = rawKey;
+                                }
                                 return result;
                             }
                         }
