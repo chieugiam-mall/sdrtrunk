@@ -328,6 +328,48 @@ public class DecryptionEngineTest
     }
 
     /**
+     * Tests that decryptWithNullKeyRC4 correctly decrypts data encrypted with a null (all-zero) key.
+     * This simulates Motorola ADP (40-bit RC4) with key ID 0 (null key).
+     */
+    @Test
+    public void testDecryptWithNullKeyRC4RoundTrip()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+        byte[] nullKey = new byte[5]; // 40-bit null key (all zeros)
+        byte[] plaintext = new byte[18]; // typical IMBE frame size
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 0x40);
+        }
+
+        // Encrypt with null key + MI (same as decryptRC4WithMI logic: seed = MI + key)
+        byte[] keySeed = new byte[mi.length + nullKey.length];
+        System.arraycopy(mi, 0, keySeed, 0, mi.length);
+        System.arraycopy(nullKey, 0, keySeed, mi.length, nullKey.length);
+        byte[] ciphertext = encryptRC4Direct(keySeed, plaintext);
+
+        // Decrypt using the null-key method
+        byte[] decrypted = engine.decryptWithNullKeyRC4(mi, 5, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithNullKeyRC4 should recover plaintext encrypted with null key");
+    }
+
+    /**
+     * Tests that decryptWithNullKeyRC4 returns empty bytes when ciphertext is null-equivalent empty.
+     */
+    @Test
+    public void testDecryptWithNullKeyRC4EmptyCiphertext()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+        byte[] mi = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09};
+        // RC4 of empty returns empty - not an error
+        byte[] result = engine.decryptWithNullKeyRC4(mi, 5, new byte[0]);
+        assertEquals(0, result.length, "Empty ciphertext should produce empty result");
+    }
+
+    /**
      * Helper method to encrypt bytes using Java's DES/ECB/NoPadding cipher.
      */
     private static byte[] encryptDESDirect(byte[] key, byte[] plaintext)

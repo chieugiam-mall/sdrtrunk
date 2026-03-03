@@ -41,6 +41,7 @@ import io.github.dsheirer.module.decode.p25.phase2.message.mac.MacMessage;
 import io.github.dsheirer.module.decode.p25.phase2.message.mac.structure.MacStructure;
 import io.github.dsheirer.module.decode.p25.phase2.message.mac.structure.PushToTalk;
 import io.github.dsheirer.module.decode.p25.phase2.timeslot.AbstractVoiceTimeslot;
+import io.github.dsheirer.module.decode.p25.reference.Encryption;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.sample.Listener;
@@ -56,6 +57,7 @@ import org.slf4j.LoggerFactory;
 public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdateProvider, IMessageProvider
 {
     private final static Logger mLog = LoggerFactory.getLogger(P25P2AudioModule.class);
+    private static final int UNSET_ALGORITHM = -1;
 
     private Listener<IdentifierUpdateNotification> mIdentifierUpdateNotificationListener;
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
@@ -68,6 +70,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
     private DecryptionEngine mDecryptionEngine;
     private String mCurrentEncryptionKID;
     private byte[] mCurrentMessageIndicator;
+    private int mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
 
     public P25P2AudioModule(UserPreferences userPreferences, int timeslot, AliasList aliasList)
     {
@@ -107,6 +110,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
         mEncryptedCall = false;
         mCurrentEncryptionKID = null;
         mCurrentMessageIndicator = null;
+        mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
     }
 
     @Override
@@ -161,6 +165,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                     {
                         mCurrentEncryptionKID = String.format("%04X", pushToTalk.getEncryptionKey().getValue().getKey());
                         mCurrentMessageIndicator = DecryptionEngine.hexToBytes(pushToTalk.getMessageIndicator());
+                        mCurrentEncryptionAlgorithm = pushToTalk.getEncryptionKey().getValue().getAlgorithm();
                     }
 
                     //There should not be any pending voice timeslots to process since the PTT message is the first in
@@ -177,6 +182,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 {
                     mCurrentEncryptionKID = String.format("%04X", ess.getEncryptionKey().getValue().getKey());
                     mCurrentMessageIndicator = DecryptionEngine.hexToBytes(ess.getMessageIndicator());
+                    mCurrentEncryptionAlgorithm = ess.getEncryptionKey().getValue().getAlgorithm();
                 }
 
                 processPendingVoiceTimeslots();
@@ -255,6 +261,16 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
         }
 
         byte[] decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
+
+        //If no key is registered for this KID but the call uses Motorola ADP (40-bit RC4) with null key
+        //ID 0, attempt decryption using a null (all-zero) 5-byte key. Key ID 0 is the P25 null key,
+        //and some Motorola systems transmit ADP-encrypted audio using this null key.
+        if(decrypted.length == 0 && mCurrentEncryptionAlgorithm == Encryption.MOTOROLA_ADP.getValue()
+            && "0000".equals(mCurrentEncryptionKID) && mCurrentMessageIndicator != null
+            && mCurrentMessageIndicator.length > 0)
+        {
+            decrypted = mDecryptionEngine.decryptWithNullKeyRC4(mCurrentMessageIndicator, 5, concatenated);
+        }
 
         if(decrypted.length == concatenated.length)
         {

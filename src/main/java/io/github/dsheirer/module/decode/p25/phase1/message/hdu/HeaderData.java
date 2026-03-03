@@ -130,8 +130,16 @@ public class HeaderData
     {
         if(mEncryptionKey == null)
         {
-            mEncryptionKey = EncryptionKeyIdentifier.create(APCO25EncryptionKey.create(getMessage().getInt(ALGORITHM_ID),
-                getMessage().getInt(KEY_ID)));
+            int algorithm = getMessage().getInt(ALGORITHM_ID);
+            int key = getMessage().getInt(KEY_ID);
+
+            //Detect when algorithm, key and MI are all zeros and override algorithm to set as unencrypted.
+            if(algorithm == 0 && key == 0 && getMessageIndicator().contains("000000000000000000"))
+            {
+                algorithm = Encryption.UNENCRYPTED.getValue(); //0x80
+            }
+
+            mEncryptionKey = EncryptionKeyIdentifier.create(APCO25EncryptionKey.create(algorithm, key));
         }
 
         return mEncryptionKey;
@@ -144,7 +152,7 @@ public class HeaderData
 
     public boolean isEncryptedAudio()
     {
-        return getEncryption() != Encryption.UNENCRYPTED;
+        return getEncryptionKey().isEncrypted();
     }
 
     public TalkgroupIdentifier getTalkgroup()

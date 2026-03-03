@@ -165,6 +165,30 @@ public class DecryptionEngine
         }
     }
 
+    /**
+     * Decrypts using RC4 (ARCFOUR) with a null (all-zero) key combined with the message indicator.
+     * This is used for Motorola ADP (40-bit RC4) calls with key ID 0 (null key), where no key has been
+     * registered in the engine.  The null key for 40-bit ADP is 5 zero bytes.
+     *
+     * @param messageIndicator per-call message indicator bytes
+     * @param keyLength        length of the null key in bytes (e.g. 5 for 40-bit ADP)
+     * @param ciphertext       encrypted bytes
+     * @return decrypted bytes, or an empty byte array on failure
+     */
+    public byte[] decryptWithNullKeyRC4(byte[] messageIndicator, int keyLength, byte[] ciphertext)
+    {
+        try
+        {
+            byte[] nullKey = new byte[keyLength];
+            return decryptRC4WithMI(nullKey, messageIndicator, ciphertext);
+        }
+        catch(Exception e)
+        {
+            mLog.error("Null-key RC4 decryption failed", e);
+            return new byte[0];
+        }
+    }
+
     private byte[] decryptRC4(byte[] rawKey, byte[] ciphertext) throws Exception
     {
         SecretKey secretKey = new SecretKeySpec(rawKey, "ARCFOUR");
