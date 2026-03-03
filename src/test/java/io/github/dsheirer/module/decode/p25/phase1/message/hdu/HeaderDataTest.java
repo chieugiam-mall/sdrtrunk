@@ -20,11 +20,13 @@
 package io.github.dsheirer.module.decode.p25.phase1.message.hdu;
 
 import io.github.dsheirer.bits.BinaryMessage;
+import io.github.dsheirer.module.decode.p25.identifier.encryption.APCO25EncryptionKey;
 import io.github.dsheirer.module.decode.p25.reference.Encryption;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -76,7 +78,9 @@ public class HeaderDataTest
 
         assertFalse(headerData.isEncryptedAudio(),
             "algorithm=0, key=0, zero MI should be treated as UNENCRYPTED");
-        assertEquals(Encryption.UNENCRYPTED, headerData.getEncryptionKey().getValue().getEncryptionAlgorithm(),
+        APCO25EncryptionKey encryptionKey = assertInstanceOf(APCO25EncryptionKey.class,
+            headerData.getEncryptionKey().getValue(), "Encryption key should be an APCO25EncryptionKey");
+        assertEquals(Encryption.UNENCRYPTED, encryptionKey.getEncryptionAlgorithm(),
             "Encryption algorithm should be overridden to UNENCRYPTED");
     }
 
