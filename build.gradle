@@ -69,7 +69,7 @@ repositories {
 //Version is defined in gradle.properties so that we can CLI override it for nightly builds.
 version = project.findProperty('projectVersion')
 
-//Java 24 is required for this version of the Project Panama preview/incubator feature
+//Java 25 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
@@ -275,6 +275,17 @@ tasks.named('startScripts') {
                     newBatLines << 'if exist "%JAVA_HOME%\\lib\\javafx.base.jar" set JAVAFX_MODULE_PATH='
                     newBatLines << 'if not "%JAVAFX_MODULE_PATH%"=="" set SDR_TRUNK_OPTS=--module-path "%JAVAFX_MODULE_PATH%" %SDR_TRUNK_OPTS%'
                 }
+                newBatLines << '@rem Verify minimum Java version (25 or later required)'
+                newBatLines << "for /f \"tokens=3\" %%j in ('\"%JAVA_EXE%\" -version 2^>^&1 ^| findstr \"version\"') do set SDR_JAVA_VER=%%j"
+                newBatLines << 'set SDR_JAVA_VER=%SDR_JAVA_VER:"=%'
+                newBatLines << "for /f \"tokens=1 delims=.+-\" %%k in (\"%SDR_JAVA_VER%\") do set SDR_JAVA_MAJOR=%%k"
+                newBatLines << "if defined SDR_JAVA_MAJOR if %SDR_JAVA_MAJOR% LSS 25 ("
+                newBatLines << "  echo."
+                newBatLines << "  echo ERROR: sdrtrunk requires Java 25 or later. Detected Java %SDR_JAVA_MAJOR%."
+                newBatLines << "  echo Please install Java 25 from https://adoptium.net/"
+                newBatLines << "  echo."
+                newBatLines << "  exit /b 1"
+                newBatLines << ")"
                 newBatLines << "set CLASSPATH=${nonJfxEntries.join(';')}"
             } else {
                 newBatLines << line
@@ -300,6 +311,21 @@ tasks.named('startScripts') {
                     newShLines << 'if [ -n "$JAVAFX_MODULE_PATH" ]; then SDR_TRUNK_OPTS="--module-path $JAVAFX_MODULE_PATH $SDR_TRUNK_OPTS"; fi'
                 }
                 newShLines << "CLASSPATH=${nonJfxEntries.join(':')}"
+            } else if (line.trim() == 'exec "$JAVACMD" "$@"') {
+                newShLines << '# Verify minimum Java version (25 or later required)'
+                newShLines << 'SDR_JAVA_VER_LINE=$("$JAVACMD" --version 2>&1 | head -1)'
+                newShLines << 'SDR_JAVA_PART=${SDR_JAVA_VER_LINE#* }'
+                newShLines << 'SDR_JAVA_PART=${SDR_JAVA_PART%% *}'
+                newShLines << 'SDR_JAVA_MAJOR=${SDR_JAVA_PART%%.*}'
+                newShLines << 'SDR_JAVA_MAJOR=${SDR_JAVA_MAJOR%%-*}'
+                newShLines << 'if [ -n "$SDR_JAVA_MAJOR" ] && [ "$SDR_JAVA_MAJOR" -lt 25 ] 2>/dev/null; then'
+                newShLines << '    echo "" >&2'
+                newShLines << '    echo "ERROR: sdrtrunk requires Java 25 or later. Detected Java $SDR_JAVA_MAJOR." >&2'
+                newShLines << '    echo "       Please install Java 25 from https://adoptium.net/" >&2'
+                newShLines << '    echo "" >&2'
+                newShLines << '    exit 1'
+                newShLines << 'fi'
+                newShLines << line
             } else {
                 newShLines << line
             }
