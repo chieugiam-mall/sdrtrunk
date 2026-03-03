@@ -103,10 +103,10 @@ public class DecryptionEngineTest
 
         byte[] key = new byte[]{0x01};
         engine.addKey("ABCD", "RC4", key);
-        assertEquals(2, engine.getKeys().size(), "Should have default key plus added key");
+        assertEquals(1, engine.getKeys().size(), "Should have one key after adding");
 
         engine.removeKey("ABCD");
-        assertEquals(1, engine.getKeys().size(), "Should only have default key after removal");
+        assertEquals(0, engine.getKeys().size(), "Should have no keys after removal");
     }
 
     /**
