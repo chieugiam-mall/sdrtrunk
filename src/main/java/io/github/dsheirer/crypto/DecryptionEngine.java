@@ -93,7 +93,8 @@ public class DecryptionEngine
 
         if(key == null)
         {
-            mLog.debug("No key found for KID [{}] - skipping decryption", kid);
+            mLog.warn("No key found for KID [{}] - skipping decryption (ciphertextLen={})", kid,
+                    ciphertext != null ? ciphertext.length : 0);
             return new byte[0];
         }
 
@@ -103,9 +104,23 @@ public class DecryptionEngine
         }
         catch(Exception e)
         {
-            mLog.error("Decryption failed for KID [{}] algorithm [{}]", kid, key.getAlgorithm(), e);
+            mLog.error("Decryption failed for KID [{}] algorithm [{}] ciphertextLen=[{}]",
+                    kid, key.getAlgorithm(), ciphertext != null ? ciphertext.length : 0, e);
             return new byte[0];
         }
+    }
+
+    /**
+     * Returns the raw key bytes for the given KID if registered, or null if not found.
+     * Intended for talkgroup key caching in audio modules.
+     *
+     * @param kid Key ID string
+     * @return Raw key bytes copy, or null if not found
+     */
+    public byte[] getRawKeyBytesForKID(String kid)
+    {
+        EncryptionKey key = mKeys.get(kid);
+        return key != null ? key.getRawKey() : null;
     }
 
     /**
@@ -145,7 +160,9 @@ public class DecryptionEngine
 
         if(key == null)
         {
-            mLog.debug("No key found for KID [{}] - skipping decryption", kid);
+            mLog.warn("No key found for KID [{}] - skipping decryption (miLen={} ciphertextLen={})", kid,
+                    messageIndicator != null ? messageIndicator.length : 0,
+                    ciphertext != null ? ciphertext.length : 0);
             return new byte[0];
         }
 
@@ -160,7 +177,8 @@ public class DecryptionEngine
         }
         catch(Exception e)
         {
-            mLog.error("Decryption failed for KID [{}] algorithm [{}]", kid, key.getAlgorithm(), e);
+            mLog.error("Decryption failed for KID [{}] algorithm [{}] ciphertextLen=[{}]",
+                    kid, key.getAlgorithm(), ciphertext != null ? ciphertext.length : 0, e);
             return new byte[0];
         }
     }
@@ -177,6 +195,9 @@ public class DecryptionEngine
      */
     public byte[] decryptWithNullKeyRC4(byte[] messageIndicator, int keyLength, byte[] ciphertext)
     {
+        mLog.warn("Attempting null-key RC4 decryption (keyLen={} miLen={} ciphertextLen={})", keyLength,
+                messageIndicator != null ? messageIndicator.length : 0,
+                ciphertext != null ? ciphertext.length : 0);
         try
         {
             byte[] nullKey = new byte[keyLength];
@@ -184,7 +205,8 @@ public class DecryptionEngine
         }
         catch(Exception e)
         {
-            mLog.error("Null-key RC4 decryption failed", e);
+            mLog.error("Null-key RC4 decryption failed (ciphertextLen={})",
+                    ciphertext != null ? ciphertext.length : 0, e);
             return new byte[0];
         }
     }
@@ -203,15 +225,26 @@ public class DecryptionEngine
     {
         try
         {
+            byte[] result;
             if(messageIndicator != null && messageIndicator.length > 0)
             {
-                return decryptRC4WithMI(rawKey, messageIndicator, ciphertext);
+                result = decryptRC4WithMI(rawKey, messageIndicator, ciphertext);
             }
-            return decryptRC4(rawKey, ciphertext);
+            else
+            {
+                result = decryptRC4(rawKey, ciphertext);
+            }
+            if(result.length > 0)
+            {
+                mLog.info("RC4 alias-key decryption succeeded (ciphertextLen={})",
+                        ciphertext != null ? ciphertext.length : 0);
+            }
+            return result;
         }
         catch(Exception e)
         {
-            mLog.error("RC4 alias-key decryption failed", e);
+            mLog.error("RC4 alias-key decryption failed (ciphertextLen={})",
+                    ciphertext != null ? ciphertext.length : 0, e);
             return new byte[0];
         }
     }
@@ -249,18 +282,67 @@ public class DecryptionEngine
 
     /**
      * Decrypts using RC4 (ARCFOUR) with a key seed derived by combining the user key and the message indicator.
-     * The key seed is formed by concatenating the MI bytes followed by the raw key bytes, providing per-call
-     * uniqueness consistent with P25 ADP usage.
+     * First tries the seed order MI||Key (consistent with P25 ADP usage), validates the result with a
+     * simple heuristic, and falls back to the alternate Key||MI order if the first result appears invalid.
+     * Returns the first result if neither order passes validation, to maintain backward compatibility.
      */
     private byte[] decryptRC4WithMI(byte[] rawKey, byte[] mi, byte[] ciphertext) throws Exception
     {
-        byte[] keySeed = new byte[mi.length + rawKey.length];
-        System.arraycopy(mi, 0, keySeed, 0, mi.length);
-        System.arraycopy(rawKey, 0, keySeed, mi.length, rawKey.length);
-        SecretKey secretKey = new SecretKeySpec(keySeed, "ARCFOUR");
-        Cipher cipher = Cipher.getInstance("ARCFOUR");
-        cipher.init(Cipher.DECRYPT_MODE, secretKey);
-        return cipher.doFinal(ciphertext);
+        // First attempt: MI || Key (standard P25 ADP order)
+        byte[] keySeed1 = new byte[mi.length + rawKey.length];
+        System.arraycopy(mi, 0, keySeed1, 0, mi.length);
+        System.arraycopy(rawKey, 0, keySeed1, mi.length, rawKey.length);
+        SecretKey secretKey1 = new SecretKeySpec(keySeed1, "ARCFOUR");
+        Cipher cipher1 = Cipher.getInstance("ARCFOUR");
+        cipher1.init(Cipher.DECRYPT_MODE, secretKey1);
+        byte[] result1 = cipher1.doFinal(ciphertext);
+
+        if(isPlausibleDecryption(result1))
+        {
+            return result1;
+        }
+
+        // Second attempt: Key || MI (alternate Motorola/OP25 order)
+        byte[] keySeed2 = new byte[rawKey.length + mi.length];
+        System.arraycopy(rawKey, 0, keySeed2, 0, rawKey.length);
+        System.arraycopy(mi, 0, keySeed2, rawKey.length, mi.length);
+        SecretKey secretKey2 = new SecretKeySpec(keySeed2, "ARCFOUR");
+        Cipher cipher2 = Cipher.getInstance("ARCFOUR");
+        cipher2.init(Cipher.DECRYPT_MODE, secretKey2);
+        byte[] result2 = cipher2.doFinal(ciphertext);
+
+        if(isPlausibleDecryption(result2))
+        {
+            mLog.debug("RC4+MI decryption succeeded with Key||MI seed order (fell back from MI||Key)");
+            return result2;
+        }
+
+        // Neither order passed validation; return first result for backward compatibility
+        return result1;
+    }
+
+    /**
+     * Returns true if the decrypted bytes appear plausible — i.e., not all bytes are identical.
+     * This is a simple heuristic used to detect obviously wrong RC4 key seed ordering.
+     *
+     * @param bytes decrypted byte array to validate
+     * @return true if at least two bytes differ, false if all bytes are identical or the array is empty
+     */
+    private boolean isPlausibleDecryption(byte[] bytes)
+    {
+        if(bytes == null || bytes.length == 0)
+        {
+            return false;
+        }
+        byte first = bytes[0];
+        for(int i = 1; i < bytes.length; i++)
+        {
+            if(bytes[i] != first)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private byte[] decryptDES(byte[] rawKey, byte[] ciphertext) throws Exception
