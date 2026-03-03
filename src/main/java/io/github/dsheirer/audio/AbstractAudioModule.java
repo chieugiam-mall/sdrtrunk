@@ -79,6 +79,14 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     /**
+     * Returns the alias list associated with this audio module.
+     */
+    protected AliasList getAliasList()
+    {
+        return mAliasList;
+    }
+
+    /**
      * Closes the current audio segment
      */
     protected void closeAudioSegment()

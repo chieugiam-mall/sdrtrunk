@@ -370,6 +370,88 @@ public class DecryptionEngineTest
     }
 
     /**
+     * Tests that decryptWithRC4Key correctly decrypts using a supplied raw key + MI.
+     * This is the method used for per-talkgroup alias-based key lookup.
+     */
+    @Test
+    public void testDecryptWithRC4KeyRoundTrip()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x0A, 0x0B, 0x0C, 0x0D, 0x0E};
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 0x50);
+        }
+
+        // Encrypt using MI+key seed (matching decryptRC4WithMI logic)
+        byte[] keySeed = new byte[mi.length + key.length];
+        System.arraycopy(mi, 0, keySeed, 0, mi.length);
+        System.arraycopy(key, 0, keySeed, mi.length, key.length);
+        byte[] ciphertext = encryptRC4Direct(keySeed, plaintext);
+
+        byte[] decrypted = engine.decryptWithRC4Key(mi, key, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithRC4Key should recover plaintext");
+    }
+
+    /**
+     * Tests that decryptWithRC4Key with null MI falls back to plain RC4.
+     */
+    @Test
+    public void testDecryptWithRC4KeyNullMIFallsBack()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05};
+        byte[] plaintext = new byte[]{0x11, 0x22, 0x33, 0x44, 0x55};
+        byte[] ciphertext = encryptRC4Direct(key, plaintext);
+
+        byte[] decrypted = engine.decryptWithRC4Key(null, key, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithRC4Key with null MI should fall back to plain RC4");
+    }
+
+    /**
+     * Tests that decryptWithAlgorithmAndKey works for AES.
+     */
+    @Test
+    public void testDecryptWithAlgorithmAndKeyAES()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[16];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(i + 1);
+        }
+        byte[] plaintext = new byte[16];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x40 + i);
+        }
+        byte[] ciphertext = encryptAESDirect(key, plaintext);
+
+        byte[] decrypted = engine.decryptWithAlgorithmAndKey("AES", key, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithAlgorithmAndKey AES should recover plaintext");
+    }
+
+    /**
+     * Tests that decryptWithAlgorithmAndKey returns empty for unknown algorithm.
+     */
+    @Test
+    public void testDecryptWithAlgorithmAndKeyUnknownAlgorithmReturnsEmpty()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+        byte[] key = new byte[]{0x01, 0x02, 0x03};
+        byte[] result = engine.decryptWithAlgorithmAndKey("UNKNOWN", key, new byte[]{0x01, 0x02});
+        assertEquals(0, result.length, "Unknown algorithm should return empty byte array");
+    }
+
+    /**
      * Helper method to encrypt bytes using Java's DES/ECB/NoPadding cipher.
      */
     private static byte[] encryptDESDirect(byte[] key, byte[] plaintext)

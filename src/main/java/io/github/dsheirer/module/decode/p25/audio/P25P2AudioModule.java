@@ -19,12 +19,16 @@
 
 package io.github.dsheirer.module.decode.p25.audio;
 
+import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.alias.id.encryption.EncryptionKeyID;
 import io.github.dsheirer.audio.codec.mbe.AmbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.bits.BinaryMessage;
 import io.github.dsheirer.crypto.DecryptionEngine;
+import io.github.dsheirer.identifier.Form;
+import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.IdentifierUpdateProvider;
 import io.github.dsheirer.identifier.Role;
@@ -272,6 +276,12 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
             decrypted = mDecryptionEngine.decryptWithNullKeyRC4(mCurrentMessageIndicator, 5, concatenated);
         }
 
+        //If still no key found, check if the talkgroup alias provides a per-talkgroup encryption key.
+        if(decrypted.length == 0 && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
+        {
+            decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated);
+        }
+
         if(decrypted.length == concatenated.length)
         {
             for(int i = 0; i < voiceFrames.size(); i++)
@@ -289,6 +299,57 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 }
             }
         }
+    }
+
+    /**
+     * Attempts decryption using a key found in the talkgroup alias, if one is configured.
+     * This provides a per-talkgroup key fallback when no key is registered for the transmitted KID.
+     *
+     * @param messageIndicator per-call message indicator bytes
+     * @param ciphertext encrypted AMBE frame bytes
+     * @return decrypted bytes if an alias key was found and decryption succeeded, otherwise empty byte array
+     */
+    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext)
+    {
+        AliasList aliasList = getAliasList();
+        if(aliasList == null)
+        {
+            return new byte[0];
+        }
+
+        for(Identifier identifier : getIdentifierCollection().getIdentifiers(Form.TALKGROUP))
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+            for(Alias alias : aliases)
+            {
+                for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
+                {
+                    if(aliasID instanceof EncryptionKeyID encKeyID && encKeyID.isValid())
+                    {
+                        byte[] rawKey = encKeyID.getRawKeyBytes();
+                        if(rawKey != null)
+                        {
+                            String algorithm = encKeyID.getAlgorithm();
+                            byte[] result;
+                            if("RC4".equals(algorithm))
+                            {
+                                result = mDecryptionEngine.decryptWithRC4Key(messageIndicator, rawKey, ciphertext);
+                            }
+                            else
+                            {
+                                result = mDecryptionEngine.decryptWithAlgorithmAndKey(algorithm, rawKey, ciphertext);
+                            }
+                            if(result.length > 0)
+                            {
+                                return result;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return new byte[0];
     }
 
     /**
