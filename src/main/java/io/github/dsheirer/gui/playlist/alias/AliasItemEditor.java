@@ -35,6 +35,7 @@ import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.AliasIDType;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.dcs.Dcs;
+import io.github.dsheirer.alias.id.encryption.EncryptionKeyID;
 import io.github.dsheirer.alias.id.esn.Esn;
 import io.github.dsheirer.alias.id.lojack.LoJackFunctionAndID;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
@@ -779,7 +780,7 @@ public class AliasItemEditor extends Editor<Alias>
             lojackMenu.getItems().add(new AddLojackItem());
 
             mAddIdentifierButton.getItems().addAll(amMenu, p25Menu, dmrMenu, fleetsyncMenu, ltrMenu, mdcMenu, mptMenu,
-                nbfmMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
+                nbfmMenu, passportMenu, taitMenu, new SeparatorMenuItem(), new AddEncryptionKeyItem(), lojackMenu);
         }
 
         return mAddIdentifierButton;
@@ -1294,6 +1295,24 @@ public class AliasItemEditor extends Editor<Alias>
                 getIdentifiersList().getItems().add(lojack);
                 getIdentifiersList().getSelectionModel().select(lojack);
                 getIdentifiersList().scrollTo(lojack);
+                modifiedProperty().set(true);
+            });
+        }
+    }
+
+    /**
+     * Menu Item for adding a new encryption key alias identifier
+     */
+    public class AddEncryptionKeyItem extends MenuItem
+    {
+        public AddEncryptionKeyItem()
+        {
+            super("Encryption Key");
+            setOnAction(event -> {
+                EncryptionKeyID encryptionKey = new EncryptionKeyID();
+                getIdentifiersList().getItems().add(encryptionKey);
+                getIdentifiersList().getSelectionModel().select(encryptionKey);
+                getIdentifiersList().scrollTo(encryptionKey);
                 modifiedProperty().set(true);
             });
         }
