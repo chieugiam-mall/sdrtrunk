@@ -276,7 +276,7 @@ tasks.named('startScripts') {
                     newBatLines << 'if not "%JAVAFX_MODULE_PATH%"=="" set SDR_TRUNK_OPTS=--module-path "%JAVAFX_MODULE_PATH%" %SDR_TRUNK_OPTS%'
                 }
                 newBatLines << '@rem Verify minimum Java version (25 or later required)'
-                newBatLines << "for /f \"tokens=3\" %%j in ('\"%JAVA_EXE%\" -version 2^>^&1 ^| findstr \"version\"') do set SDR_JAVA_VER=%%j"
+                newBatLines << "for /f \"tokens=3\" %%j in ('call \"%JAVA_EXE%\" -version 2^>^&1 ^| findstr \"version\"') do set SDR_JAVA_VER=%%j"
                 newBatLines << 'set SDR_JAVA_VER=%SDR_JAVA_VER:"=%'
                 newBatLines << "for /f \"tokens=1 delims=.+-\" %%k in (\"%SDR_JAVA_VER%\") do set SDR_JAVA_MAJOR=%%k"
                 newBatLines << "if defined SDR_JAVA_MAJOR if %SDR_JAVA_MAJOR% LSS 25 ("
