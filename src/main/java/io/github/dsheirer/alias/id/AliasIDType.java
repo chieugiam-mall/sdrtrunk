@@ -24,6 +24,7 @@ public enum AliasIDType
 {
     BROADCAST_CHANNEL("Audio Broadcast Channel"),
     DCS("Digital Coded Squelch (DCS)"),
+    ENCRYPTION_KEY("Encryption Key"),
     ESN("ESN"),
     INVERT("Audio Inversion"),
     LOJACK("LoJack"),

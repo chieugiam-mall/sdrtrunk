@@ -189,6 +189,56 @@ public class DecryptionEngine
         }
     }
 
+    /**
+     * Decrypts the provided ciphertext using the given raw RC4 key combined with the message indicator.
+     * This method is used for per-talkgroup alias-based key lookup, where the caller supplies the raw
+     * key bytes directly rather than looking them up by KID.
+     *
+     * @param messageIndicator per-call message indicator bytes (may be null or empty, falls back to plain RC4)
+     * @param rawKey           raw key bytes for the RC4 cipher
+     * @param ciphertext       encrypted bytes
+     * @return decrypted bytes, or an empty byte array on failure
+     */
+    public byte[] decryptWithRC4Key(byte[] messageIndicator, byte[] rawKey, byte[] ciphertext)
+    {
+        try
+        {
+            if(messageIndicator != null && messageIndicator.length > 0)
+            {
+                return decryptRC4WithMI(rawKey, messageIndicator, ciphertext);
+            }
+            return decryptRC4(rawKey, ciphertext);
+        }
+        catch(Exception e)
+        {
+            mLog.error("RC4 alias-key decryption failed", e);
+            return new byte[0];
+        }
+    }
+
+    /**
+     * Decrypts the provided ciphertext using the given algorithm name and raw key bytes.
+     * This method is used for per-talkgroup alias-based key lookup for non-RC4 algorithms.
+     *
+     * @param algorithm  algorithm name: "DES" or "AES"
+     * @param rawKey     raw key bytes
+     * @param ciphertext encrypted bytes
+     * @return decrypted bytes, or an empty byte array on failure
+     */
+    public byte[] decryptWithAlgorithmAndKey(String algorithm, byte[] rawKey, byte[] ciphertext)
+    {
+        try
+        {
+            EncryptionKey tempKey = new EncryptionKey("alias", algorithm, rawKey);
+            return decryptWithKey(tempKey, ciphertext);
+        }
+        catch(Exception e)
+        {
+            mLog.error("Alias-key decryption failed for algorithm [{}]", algorithm, e);
+            return new byte[0];
+        }
+    }
+
     private byte[] decryptRC4(byte[] rawKey, byte[] ciphertext) throws Exception
     {
         SecretKey secretKey = new SecretKeySpec(rawKey, "ARCFOUR");
