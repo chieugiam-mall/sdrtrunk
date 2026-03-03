@@ -352,6 +352,21 @@ public class DecryptionEngine
         SecretKey secretKey = new SecretKeySpec(rawKey, "DES");
         Cipher cipher = Cipher.getInstance("DES/ECB/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
+
+        int originalLength = ciphertext.length;
+        int blockSize = cipher.getBlockSize(); // 8 for DES
+
+        if(originalLength % blockSize != 0)
+        {
+            int paddedLength = ((originalLength / blockSize) + 1) * blockSize;
+            byte[] padded = new byte[paddedLength];
+            System.arraycopy(ciphertext, 0, padded, 0, originalLength);
+            byte[] decrypted = cipher.doFinal(padded);
+            byte[] trimmed = new byte[originalLength];
+            System.arraycopy(decrypted, 0, trimmed, 0, originalLength);
+            return trimmed;
+        }
+
         return cipher.doFinal(ciphertext);
     }
 
@@ -362,6 +377,21 @@ public class DecryptionEngine
         SecretKey secretKey = new SecretKeySpec(rawKey, "AES");
         Cipher cipher = Cipher.getInstance("AES/ECB/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, secretKey);
+
+        int originalLength = ciphertext.length;
+        int blockSize = cipher.getBlockSize(); // 16 for AES
+
+        if(originalLength % blockSize != 0)
+        {
+            int paddedLength = ((originalLength / blockSize) + 1) * blockSize;
+            byte[] padded = new byte[paddedLength];
+            System.arraycopy(ciphertext, 0, padded, 0, originalLength);
+            byte[] decrypted = cipher.doFinal(padded);
+            byte[] trimmed = new byte[originalLength];
+            System.arraycopy(decrypted, 0, trimmed, 0, originalLength);
+            return trimmed;
+        }
+
         return cipher.doFinal(ciphertext);
     }
 
