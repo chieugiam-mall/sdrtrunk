@@ -20,6 +20,10 @@
 package io.github.dsheirer.crypto;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 public class DecryptionEngineTest
 {
+    @TempDir
+    Path tempDir;
     /**
      * Tests that adding a key allows subsequent RC4 decryption.
      */
@@ -264,6 +270,61 @@ public class DecryptionEngineTest
         byte[] decrypted = engine.decrypt("0050", null, ciphertext);
 
         assertArrayEquals(plaintext, decrypted, "AES decrypt with null MI should fall back to plain decrypt");
+    }
+
+    /**
+     * Tests that save() writes keys to disk and load() restores them into a fresh engine.
+     */
+    @Test
+    public void testSaveAndLoad() throws IOException
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+        engine.addKey("0001", "AES", new byte[]{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10});
+        engine.addKey("0002", "RC4", new byte[]{0x11, 0x22, 0x33});
+
+        Path file = tempDir.resolve("test_keys.json");
+        engine.save(file);
+
+        DecryptionEngine loaded = new DecryptionEngine();
+        loaded.load(file);
+
+        assertEquals(2, loaded.getKeys().size(), "Loaded engine should have 2 keys");
+        assertEquals(1, loaded.getKeys().stream().filter(k -> "0001".equals(k.getKid())).count(),
+                "KID 0001 should be present");
+        assertEquals(1, loaded.getKeys().stream().filter(k -> "0002".equals(k.getKid())).count(),
+                "KID 0002 should be present");
+    }
+
+    /**
+     * Tests that load() on a non-existent file is silently ignored.
+     */
+    @Test
+    public void testLoadMissingFileIsIgnored() throws IOException
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+        engine.load(tempDir.resolve("nonexistent.json"));
+        assertEquals(0, engine.getKeys().size(), "Loading a missing file should leave engine empty");
+    }
+
+    /**
+     * Tests that save() followed by load() preserves key bytes faithfully.
+     */
+    @Test
+    public void testSaveAndLoadPreservesKeyBytes() throws IOException
+    {
+        byte[] key = new byte[]{0x01, 0x23, 0x45, 0x67, (byte)0x89, (byte)0xAB, (byte)0xCD, (byte)0xEF};
+        DecryptionEngine engine = new DecryptionEngine();
+        engine.addKey("0010", "DES", key);
+
+        Path file = tempDir.resolve("keys.json");
+        engine.save(file);
+
+        DecryptionEngine loaded = new DecryptionEngine();
+        loaded.load(file);
+
+        assertEquals(1, loaded.getKeys().size());
+        assertArrayEquals(key, loaded.getKeys().get(0).getRawKey(), "Key bytes should survive save/load round-trip");
     }
 
     /**

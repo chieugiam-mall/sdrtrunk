@@ -20,8 +20,16 @@
 // Part of the crypto subsystem for RC4/DES/AES decryption key management.
 package io.github.dsheirer.crypto;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -207,6 +215,93 @@ public class DecryptionEngine
     public List<EncryptionKey> getKeys()
     {
         return Collections.unmodifiableList(new ArrayList<>(mKeys.values()));
+    }
+
+    /**
+     * Saves all registered keys to the specified JSON file.
+     * Each entry contains "kid", "algorithm", and "key" (hex-encoded).
+     *
+     * @param filePath destination file path
+     * @throws IOException on write failure
+     */
+    public void save(Path filePath) throws IOException
+    {
+        List<Map<String, String>> list = new ArrayList<>();
+
+        for(EncryptionKey key : getKeys())
+        {
+            Map<String, String> entry = new LinkedHashMap<>();
+            entry.put("kid", key.getKid());
+            entry.put("algorithm", key.getAlgorithm());
+            entry.put("key", bytesToHex(key.getRawKey()));
+            list.add(entry);
+        }
+
+        Gson gson = new Gson();
+        Files.write(filePath, gson.toJson(list).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Loads keys from the specified JSON file into this engine.
+     * Existing keys are not cleared; entries in the file are added/replaced.
+     * Silently returns if the file does not exist.
+     *
+     * @param filePath source file path
+     * @throws IOException on read failure
+     */
+    public void load(Path filePath) throws IOException
+    {
+        if(!Files.exists(filePath))
+        {
+            return;
+        }
+
+        String json = new String(Files.readAllBytes(filePath), StandardCharsets.UTF_8);
+        Gson gson = new Gson();
+        Type listType = new TypeToken<List<Map<String, String>>>()
+        {
+        }.getType();
+        List<Map<String, String>> list = gson.fromJson(json, listType);
+
+        if(list == null)
+        {
+            return;
+        }
+
+        for(Map<String, String> entry : list)
+        {
+            String kid = entry.get("kid");
+            String algorithm = entry.get("algorithm");
+            byte[] keyBytes = hexToBytes(entry.get("key"));
+
+            if(kid != null && algorithm != null && keyBytes != null)
+            {
+                addKey(kid, algorithm, keyBytes);
+            }
+            else
+            {
+                mLog.warn("Skipping malformed key entry in [{}]: kid={} algorithm={} keyPresent={}",
+                        filePath, kid, algorithm, keyBytes != null);
+            }
+        }
+    }
+
+    /**
+     * Encodes a byte array as an uppercase hex string.
+     *
+     * @param bytes byte array to encode
+     * @return hex string
+     */
+    private static String bytesToHex(byte[] bytes)
+    {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+
+        for(byte b : bytes)
+        {
+            sb.append(String.format("%02X", b));
+        }
+
+        return sb.toString();
     }
 
     /**
