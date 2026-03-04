@@ -148,6 +148,7 @@ public class KeyManagementPanel extends JPanel
     private void onAddKey()
     {
         String kid = mKidField.getText().trim();
+        kid = kid.toUpperCase();
         String algorithm = (String) mAlgorithmCombo.getSelectedItem();
         char[] passwordChars = mKeyField.getPassword();
 

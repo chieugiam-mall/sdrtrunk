@@ -59,7 +59,7 @@ public class P25P1AudioModule extends ImbeAudioModule
     private String mCurrentEncryptionKID;
     private byte[] mCurrentMessageIndicator;
     private int mCurrentEncryptionAlgorithm = UNSET_ALGORITHM;
-    private Map<Integer, byte[]> mTalkgroupKeyCache = new ConcurrentHashMap<>();
+    private Map<Integer, CachedKey> mTalkgroupKeyCache = new ConcurrentHashMap<>();
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
@@ -212,10 +212,17 @@ public class P25P1AudioModule extends ImbeAudioModule
             Integer talkgroupId = getCurrentTalkgroupId();
             if(talkgroupId != null && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
             {
-                byte[] cachedKey = mTalkgroupKeyCache.get(talkgroupId);
-                if(cachedKey != null)
+                CachedKey cached = mTalkgroupKeyCache.get(talkgroupId);
+                if(cached != null)
                 {
-                    decrypted = mDecryptionEngine.decryptWithRC4Key(mCurrentMessageIndicator, cachedKey, concatenated);
+                    if("RC4".equals(cached.algorithm()))
+                    {
+                        decrypted = mDecryptionEngine.decryptWithRC4Key(mCurrentMessageIndicator, cached.rawKey(), concatenated);
+                    }
+                    else
+                    {
+                        decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(cached.algorithm(), cached.rawKey(), concatenated);
+                    }
                 }
             }
 
@@ -228,7 +235,8 @@ public class P25P1AudioModule extends ImbeAudioModule
                     byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
                     if(rawKey != null)
                     {
-                        mTalkgroupKeyCache.put(talkgroupId, rawKey);
+                        String algo = mDecryptionEngine.getAlgorithmForKID(mCurrentEncryptionKID);
+                        mTalkgroupKeyCache.put(talkgroupId, new CachedKey(rawKey, algo != null ? algo : "RC4"));
                     }
                 }
             }
@@ -244,7 +252,7 @@ public class P25P1AudioModule extends ImbeAudioModule
 
                 if(decrypted.length > 0 && talkgroupId != null)
                 {
-                    mTalkgroupKeyCache.put(talkgroupId, new byte[5]);
+                    mTalkgroupKeyCache.put(talkgroupId, new CachedKey(new byte[5], "RC4"));
                 }
             }
 
@@ -252,11 +260,13 @@ public class P25P1AudioModule extends ImbeAudioModule
             if(decrypted.length == 0 && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
             {
                 byte[][] foundKey = new byte[1][];
-                decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated, foundKey);
+                String[] foundAlgorithm = new String[1];
+                decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated, foundKey, foundAlgorithm);
 
                 if(decrypted.length > 0 && talkgroupId != null && foundKey[0] != null)
                 {
-                    mTalkgroupKeyCache.put(talkgroupId, foundKey[0]);
+                    String algo = foundAlgorithm[0] != null ? foundAlgorithm[0] : "RC4";
+                    mTalkgroupKeyCache.put(talkgroupId, new CachedKey(foundKey[0], algo));
                 }
             }
 
@@ -302,9 +312,11 @@ public class P25P1AudioModule extends ImbeAudioModule
      * @param messageIndicator per-call message indicator bytes
      * @param ciphertext encrypted IMBE frame bytes
      * @param foundKeyOut single-element array to receive the raw key bytes that succeeded (may be null on failure)
+     * @param foundAlgorithmOut single-element array to receive the algorithm name that succeeded (may be null on failure)
      * @return decrypted bytes if an alias key was found and decryption succeeded, otherwise empty byte array
      */
-    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext, byte[][] foundKeyOut)
+    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext, byte[][] foundKeyOut,
+                                      String[] foundAlgorithmOut)
     {
         AliasList aliasList = getAliasList();
         if(aliasList == null)
@@ -354,6 +366,10 @@ public class P25P1AudioModule extends ImbeAudioModule
                                 {
                                     foundKeyOut[0] = rawKey;
                                 }
+                                if(foundAlgorithmOut != null)
+                                {
+                                    foundAlgorithmOut[0] = algorithm;
+                                }
                                 return result;
                             }
                         }
@@ -387,4 +403,9 @@ public class P25P1AudioModule extends ImbeAudioModule
             }
         }
     }
+
+    /**
+     * Holds cached decryption key data for a talkgroup, including the raw key bytes and algorithm name.
+     */
+    private record CachedKey(byte[] rawKey, String algorithm) {}
 }

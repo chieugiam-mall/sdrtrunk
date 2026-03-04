@@ -67,7 +67,8 @@ public class DecryptionEngine
      */
     public void addKey(String kid, String algorithm, byte[] keyBytes)
     {
-        mKeys.put(kid, new EncryptionKey(kid, algorithm, keyBytes));
+        String upperKid = kid.toUpperCase();
+        mKeys.put(upperKid, new EncryptionKey(upperKid, algorithm, keyBytes));
     }
 
     /**
@@ -77,7 +78,7 @@ public class DecryptionEngine
      */
     public void removeKey(String kid)
     {
-        mKeys.remove(kid);
+        mKeys.remove(kid.toUpperCase());
     }
 
     /**
@@ -89,7 +90,7 @@ public class DecryptionEngine
      */
     public byte[] decrypt(String kid, byte[] ciphertext)
     {
-        EncryptionKey key = mKeys.get(kid);
+        EncryptionKey key = mKeys.get(kid.toUpperCase());
 
         if(key == null)
         {
@@ -119,8 +120,20 @@ public class DecryptionEngine
      */
     public byte[] getRawKeyBytesForKID(String kid)
     {
-        EncryptionKey key = mKeys.get(kid);
+        EncryptionKey key = mKeys.get(kid.toUpperCase());
         return key != null ? key.getRawKey() : null;
+    }
+
+    /**
+     * Returns the algorithm name for the given KID if registered, or null if not found.
+     *
+     * @param kid Key ID string
+     * @return Algorithm string (e.g. "RC4", "DES", "AES"), or null if not found
+     */
+    public String getAlgorithmForKID(String kid)
+    {
+        EncryptionKey key = mKeys.get(kid.toUpperCase());
+        return key != null ? key.getAlgorithm() : null;
     }
 
     /**
@@ -156,7 +169,7 @@ public class DecryptionEngine
      */
     public byte[] decrypt(String kid, byte[] messageIndicator, byte[] ciphertext)
     {
-        EncryptionKey key = mKeys.get(kid);
+        EncryptionKey key = mKeys.get(kid.toUpperCase());
 
         if(key == null)
         {
