@@ -708,7 +708,7 @@ public class DecryptionEngineTest
     {
         DecryptionEngine engine = new DecryptionEngine();
 
-        byte[] key = new byte[]{0x0A, 0x0B, 0x0C};
+        byte[] key = new byte[]{0x0A, 0x0B, 0x0C, 0x0D, 0x0E};
         engine.addKey("Cc14", "RC4", key);
 
         byte[] plaintext = new byte[]{0x11, 0x22, 0x33};
