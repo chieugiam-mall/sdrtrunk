@@ -52,6 +52,16 @@ public class IMBEInterleave
         0x9, 0xD, 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3
     };
 
+    /** Hamming(15,11) full checksums for all 15 bit positions (data + parity), used for error correction */
+    private static final int[] HAMMING15_FULL_CHECKSUMS = {
+        0x9, 0xD, 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3, 0x8, 0x4, 0x2, 0x1
+    };
+
+    /** PN generator linear congruential multiplier (from P25 IMBE specification) */
+    private static final int PN_MULTIPLIER = 173;
+    /** PN generator linear congruential increment (from P25 IMBE specification) */
+    private static final int PN_INCREMENT = 13849;
+
     private IMBEInterleave() {}
 
     /**
@@ -310,10 +320,9 @@ public class IMBEInterleave
         if(syndrome != 0)
         {
             // Try to correct single-bit error using syndrome lookup
-            int[] fullChecksums = {0x9, 0xD, 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3, 0x8, 0x4, 0x2, 0x1};
             for(int i = 0; i < 15; i++)
             {
-                if(fullChecksums[i] == syndrome)
+                if(HAMMING15_FULL_CHECKSUMS[i] == syndrome)
                 {
                     codeword15 ^= (1 << (14 - i));
                     break;
@@ -336,7 +345,7 @@ public class IMBEInterleave
         int n = 0;
         for(int i = 22; i >= 0; i--)
         {
-            pn[0] = (173 * pn[0] + 13849) & 0xFFFF;
+            pn[0] = (PN_MULTIPLIER * pn[0] + PN_INCREMENT) & 0xFFFF;
             if((pn[0] & 32768) != 0)
             {
                 n += (1 << i);
@@ -353,7 +362,7 @@ public class IMBEInterleave
         int n = 0;
         for(int i = 14; i >= 0; i--)
         {
-            pn[0] = (173 * pn[0] + 13849) & 0xFFFF;
+            pn[0] = (PN_MULTIPLIER * pn[0] + PN_INCREMENT) & 0xFFFF;
             if((pn[0] & 32768) != 0)
             {
                 n += (1 << i);

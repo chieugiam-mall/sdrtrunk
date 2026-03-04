@@ -219,7 +219,10 @@ public class P25P1CryptUtil
      * Uses a 13-byte key seed: Key[0..4] || MI[0..7].
      * Produces 469 bytes of keystream via the standard RC4 KSA + PRGA.
      *
-     * @param key 5-byte ADP key
+     * If the supplied key is shorter than 5 bytes, it is zero-padded on the left.
+     * If longer than 5 bytes, only the first 5 bytes are used (ADP uses 40-bit keys).
+     *
+     * @param key ADP key (nominally 5 bytes / 40 bits)
      * @param mi  9-byte message indicator (first 8 bytes used)
      * @return 469-byte keystream, or null on error
      */
