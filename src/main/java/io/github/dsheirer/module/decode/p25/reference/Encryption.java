@@ -88,6 +88,49 @@ public enum Encryption
     }
 
     /**
+     * Maps this P25 encryption algorithm to the corresponding DecryptionEngine algorithm string.
+     * Returns null for algorithms that are not supported or for the UNENCRYPTED type.
+     *
+     * @return "RC4", "DES", or "AES", or null if not mappable to a supported algorithm.
+     */
+    public String toDecryptionAlgorithm()
+    {
+        switch(this)
+        {
+            case DES_OFB:
+            case TRIPLE_DES_2_KEY:
+            case TRIPLE_DES_3_KEY:
+            case DES_XL:
+                return "DES";
+            case AES_256:
+            case AES_128:
+            case AES_CBC:
+            case AES_128_OFB:
+            case MOTOROLA_AF:
+                return "AES";
+            case MOTOROLA_ADP:
+            case DVP_XL:
+            case DVP_SPFL:
+            case DVI_XL:
+                return "RC4";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Maps a P25 encryption algorithm ID value to the corresponding DecryptionEngine algorithm string.
+     * Convenience method that combines {@link #fromValue(int)} and {@link #toDecryptionAlgorithm()}.
+     *
+     * @param algorithmId P25 encryption algorithm ID
+     * @return "RC4", "DES", or "AES", or null if not mappable
+     */
+    public static String toDecryptionAlgorithm(int algorithmId)
+    {
+        return fromValue(algorithmId).toDecryptionAlgorithm();
+    }
+
+    /**
      * Utility method to lookup the encryption type from the value.
      * @param value of the encryption type.
      * @return enumeration entry or UNKNOWN.

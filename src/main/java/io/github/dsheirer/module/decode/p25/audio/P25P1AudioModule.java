@@ -51,6 +51,11 @@ public class P25P1AudioModule extends ImbeAudioModule
     private static final Logger mLog = LoggerFactory.getLogger(P25P1AudioModule.class);
     private static final int IMBE_FRAME_SIZE = 18;
     private static final int UNSET_ALGORITHM = -1;
+    /**
+     * Maximum number of LDU messages to cache before assuming unencrypted audio when the encrypted call state
+     * has not been established from HDU or LDU2 messages (e.g. due to missed HDU and CRC failures in LDU2).
+     */
+    private static final int MAX_CACHED_LDU_BEFORE_UNENCRYPTED_FALLBACK = 4;
 
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
@@ -173,6 +178,24 @@ public class P25P1AudioModule extends ImbeAudioModule
                     else
                     {
                         mCachedLDUMessages.add(ldu2);
+
+                        //Fallback: if we've accumulated too many LDU messages without establishing the encrypted
+                        //call state (e.g. due to missed HDU and repeated LDU2 CRC failures), assume the call is
+                        //unencrypted and process the cached audio to avoid silent calls.
+                        if(mCachedLDUMessages.size() >= MAX_CACHED_LDU_BEFORE_UNENCRYPTED_FALLBACK)
+                        {
+                            mLog.info("Encrypted call state not established after [{}] cached LDU messages - " +
+                                "falling back to unencrypted audio processing", mCachedLDUMessages.size());
+                            mEncryptedCallStateEstablished = true;
+                            mEncryptedCall = false;
+
+                            for(LDUMessage cachedLdu : mCachedLDUMessages)
+                            {
+                                processAudio(cachedLdu);
+                            }
+
+                            mCachedLDUMessages.clear();
+                        }
                     }
                 }
             }
@@ -241,6 +264,35 @@ public class P25P1AudioModule extends ImbeAudioModule
                 }
             }
 
+            //If the registered key algorithm didn't work, try using the P25 protocol-specified algorithm.
+            //This handles cases where the key was registered with the wrong algorithm string (e.g. "RC4"
+            //instead of "DES") by deriving the correct algorithm from the over-the-air algorithm ID.
+            if(decrypted.length == 0 && mCurrentEncryptionAlgorithm != UNSET_ALGORITHM
+                && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
+            {
+                String protocolAlgo = Encryption.toDecryptionAlgorithm(mCurrentEncryptionAlgorithm);
+                if(protocolAlgo != null)
+                {
+                    byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
+                    if(rawKey != null)
+                    {
+                        String registeredAlgo = mDecryptionEngine.getAlgorithmForKID(mCurrentEncryptionKID);
+                        if(!protocolAlgo.equals(registeredAlgo))
+                        {
+                            mLog.info("Retrying decryption with protocol algorithm [{}] (registered as [{}]) for KID [{}]",
+                                    protocolAlgo, registeredAlgo, mCurrentEncryptionKID);
+                            decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(protocolAlgo, rawKey,
+                                mCurrentMessageIndicator, concatenated);
+
+                            if(decrypted.length > 0 && talkgroupId != null)
+                            {
+                                mTalkgroupKeyCache.put(talkgroupId, new CachedKey(rawKey, protocolAlgo));
+                            }
+                        }
+                    }
+                }
+            }
+
             //If no key is registered for this KID but the call uses Motorola ADP (40-bit RC4) with null key
             //ID 0, attempt decryption using a null (all-zero) 5-byte key. Key ID 0 is the P25 null key,
             //and some Motorola systems transmit ADP-encrypted audio using this null key.
@@ -272,8 +324,12 @@ public class P25P1AudioModule extends ImbeAudioModule
 
             if(decrypted.length == 0)
             {
-                mLog.warn("Failed to decrypt encrypted audio for talkgroup [{}] with KID [{}]",
-                        talkgroupId, mCurrentEncryptionKID);
+                Encryption encType = Encryption.fromValue(mCurrentEncryptionAlgorithm);
+                String protocolAlgo = encType.toDecryptionAlgorithm();
+                mLog.warn("Failed to decrypt encrypted audio for talkgroup [{}] with KID [{}] algorithm [{}] (0x{}) " +
+                        "protocolAlgo [{}]", talkgroupId, mCurrentEncryptionKID, encType,
+                        String.format("%02X", mCurrentEncryptionAlgorithm & 0xFF),
+                        protocolAlgo != null ? protocolAlgo : "UNSUPPORTED");
             }
 
             if(decrypted.length == concatenated.length)
