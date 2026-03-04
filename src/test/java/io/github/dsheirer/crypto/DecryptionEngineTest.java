@@ -767,7 +767,7 @@ public class DecryptionEngineTest
 
     /**
      * Tests that DES-OFB decryption with a message indicator round-trips correctly.
-     * P25 DES-OFB (algorithm ID 0x81) uses the MI as the initialization vector.
+     * P25 DES-OFB (algorithm ID 0x81) uses the first 8 bytes of the 9-byte MI as the 64-bit IV.
      */
     @Test
     public void testDESOFBDecryptWithMIRoundTrip()
@@ -792,7 +792,7 @@ public class DecryptionEngineTest
 
     /**
      * Tests that AES-256-OFB decryption with a message indicator round-trips correctly.
-     * P25 AES-256 (algorithm ID 0x84) uses the MI as the initialization vector.
+     * P25 AES-256 (algorithm ID 0x84) uses the 9-byte MI zero-padded to 16 bytes as the 128-bit IV.
      */
     @Test
     public void testAES256OFBDecryptWithMIRoundTrip()
@@ -821,7 +821,7 @@ public class DecryptionEngineTest
 
     /**
      * Tests that AES-128-OFB decryption with a message indicator round-trips correctly.
-     * P25 AES-128-OFB (algorithm ID 0x89) uses the MI as the initialization vector.
+     * P25 AES-128-OFB (algorithm ID 0x89) uses the 9-byte MI zero-padded to 16 bytes as the 128-bit IV.
      */
     @Test
     public void testAES128OFBDecryptWithMIRoundTrip()
