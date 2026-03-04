@@ -663,4 +663,105 @@ public class DecryptionEngineTest
 
         assertArrayEquals(plaintext, decrypted, "RC4+MI decryption should still work with standard MI||Key seed order");
     }
+
+    /**
+     * Tests that addKey normalizes KID to uppercase and lookup succeeds regardless of input case.
+     */
+    @Test
+    public void testAddKeyNormalizesKIDToUpperCase()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05};
+        engine.addKey("cc14", "RC4", key);
+
+        // Should be stored as "CC14" - getKeys() should reflect uppercase
+        assertEquals(1, engine.getKeys().size(), "Should have one key");
+        assertEquals("CC14", engine.getKeys().get(0).getKid(), "KID should be stored as uppercase");
+    }
+
+    /**
+     * Tests that decrypt with an uppercase KID finds a key stored with lowercase KID.
+     */
+    @Test
+    public void testDecryptCaseInsensitiveLowerAddUpperLookup()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05};
+        engine.addKey("cc14", "RC4", key);
+
+        byte[] plaintext = new byte[]{0x11, 0x22, 0x33, 0x44, 0x55};
+        byte[] ciphertext = encryptRC4Direct(key, plaintext);
+
+        // Lookup with uppercase KID (as produced by String.format("%04X", ...))
+        byte[] decrypted = engine.decrypt("CC14", ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decrypt with uppercase KID should find key stored with lowercase KID");
+    }
+
+    /**
+     * Tests that decrypt with a mixed-case KID finds the key.
+     */
+    @Test
+    public void testDecryptCaseInsensitiveMixedCase()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x0A, 0x0B, 0x0C};
+        engine.addKey("Cc14", "RC4", key);
+
+        byte[] plaintext = new byte[]{0x11, 0x22, 0x33};
+        byte[] ciphertext = encryptRC4Direct(key, plaintext);
+
+        byte[] decrypted = engine.decrypt("cC14", ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decrypt with mixed-case KID should find key");
+    }
+
+    /**
+     * Tests that removeKey with lowercase KID removes a key stored with uppercase KID.
+     */
+    @Test
+    public void testRemoveKeyCaseInsensitive()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01};
+        engine.addKey("CC14", "RC4", key);
+        assertEquals(1, engine.getKeys().size(), "Should have one key after adding");
+
+        engine.removeKey("cc14");
+        assertEquals(0, engine.getKeys().size(), "Should have no keys after case-insensitive removal");
+    }
+
+    /**
+     * Tests that getRawKeyBytesForKID is case-insensitive.
+     */
+    @Test
+    public void testGetRawKeyBytesForKIDCaseInsensitive()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03};
+        engine.addKey("cc14", "RC4", key);
+
+        byte[] retrieved = engine.getRawKeyBytesForKID("CC14");
+        assertArrayEquals(key, retrieved, "getRawKeyBytesForKID should be case-insensitive");
+    }
+
+    /**
+     * Tests that getAlgorithmForKID returns the algorithm for the given KID case-insensitively.
+     */
+    @Test
+    public void testGetAlgorithmForKIDCaseInsensitive()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x02, 0x03};
+        engine.addKey("cc14", "DES", key);
+
+        assertEquals("DES", engine.getAlgorithmForKID("CC14"), "getAlgorithmForKID should be case-insensitive");
+        assertNull(engine.getAlgorithmForKID("FFFF"), "getAlgorithmForKID should return null for unknown KID");
+    }
 }
