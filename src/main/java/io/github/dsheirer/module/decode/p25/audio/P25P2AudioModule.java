@@ -283,7 +283,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 }
                 else
                 {
-                    decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(cached.algorithm(), cached.rawKey(), concatenated);
+                    decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(cached.algorithm(), cached.rawKey(), mCurrentMessageIndicator, concatenated);
                 }
             }
         }
@@ -425,7 +425,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                             }
                             else
                             {
-                                result = mDecryptionEngine.decryptWithAlgorithmAndKey(algorithm, rawKey, ciphertext);
+                                result = mDecryptionEngine.decryptWithAlgorithmAndKey(algorithm, rawKey, messageIndicator, ciphertext);
                             }
                             if(result.length > 0)
                             {
