@@ -258,7 +258,7 @@ public class ChannelMetadataModel extends AbstractTableModel implements IChannel
     @Override
     public Object getValueAt(int rowIndex, int columnIndex)
     {
-        if(rowIndex <= mChannelMetadata.size())
+        if(rowIndex < mChannelMetadata.size())
         {
             ChannelMetadata channelMetadata = mChannelMetadata.get(rowIndex);
 

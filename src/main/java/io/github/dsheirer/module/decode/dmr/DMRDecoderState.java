@@ -577,7 +577,10 @@ public class DMRDecoderState extends TimeslotDecoderState
         }
         else
         {
-            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL, getTimeslot()));
+            State continuationState = (mCurrentCallEvent != null &&
+                DecodeEventType.VOICE_CALLS_ENCRYPTED.contains(mCurrentCallEvent.getEventType()))
+                ? State.ENCRYPTED : State.CALL;
+            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, continuationState, getTimeslot()));
         }
 
         if(message.getSyncPattern() == DMRSyncPattern.BS_VOICE_FRAME_F && message instanceof VoiceEMBMessage voiceEmb)
@@ -1394,9 +1397,13 @@ public class DMRDecoderState extends TimeslotDecoderState
      */
     private void updateEncryptedCall(EmbeddedEncryptionParameters embeddedEncryptionParameters, boolean isGroup, long timestamp)
     {
+        Event event;
+
         if(mCurrentCallEvent != null)
         {
-            String details = mCurrentCallEvent.getDetails();;
+            event = Event.CONTINUATION;
+
+            String details = mCurrentCallEvent.getDetails();
 
             if(details == null)
             {
@@ -1408,9 +1415,18 @@ public class DMRDecoderState extends TimeslotDecoderState
             }
 
             mCurrentCallEvent.setDetails(details);
+
+            //Update the call event type to encrypted if it was originally created as a non-encrypted call
+            if(!DecodeEventType.VOICE_CALLS_ENCRYPTED.contains(mCurrentCallEvent.getEventType()))
+            {
+                mCurrentCallEvent.setDecodeEventType(isGroup ? DecodeEventType.CALL_GROUP_ENCRYPTED :
+                    DecodeEventType.CALL_ENCRYPTED);
+            }
         }
         else
         {
+            event = Event.START;
+
             mCurrentCallEvent = DMRDecodeEvent.builder(isGroup ? DecodeEventType.CALL_GROUP_ENCRYPTED :
                             DecodeEventType.CALL_ENCRYPTED, timestamp)
                     .channel(getCurrentChannel())
@@ -1420,6 +1436,8 @@ public class DMRDecoderState extends TimeslotDecoderState
                     .build();
             broadcast(mCurrentCallEvent);
         }
+
+        broadcast(new DecoderStateEvent(this, event, State.ENCRYPTED, getTimeslot()));
     }
 
     /**
