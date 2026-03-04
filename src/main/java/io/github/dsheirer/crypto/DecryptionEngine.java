@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -181,9 +182,20 @@ public class DecryptionEngine
 
         try
         {
-            if("RC4".equals(key.getAlgorithm()) && messageIndicator != null && messageIndicator.length > 0)
+            if(messageIndicator != null && messageIndicator.length > 0)
             {
-                return decryptRC4WithMI(key.getRawKey(), messageIndicator, ciphertext);
+                if("RC4".equals(key.getAlgorithm()))
+                {
+                    return decryptRC4WithMI(key.getRawKey(), messageIndicator, ciphertext);
+                }
+                if("DES".equals(key.getAlgorithm()))
+                {
+                    return decryptDESOFB(key.getRawKey(), messageIndicator, ciphertext);
+                }
+                if("AES".equals(key.getAlgorithm()))
+                {
+                    return decryptAESOFB(key.getRawKey(), messageIndicator, ciphertext);
+                }
             }
 
             return decryptWithKey(key, ciphertext);
@@ -273,8 +285,37 @@ public class DecryptionEngine
      */
     public byte[] decryptWithAlgorithmAndKey(String algorithm, byte[] rawKey, byte[] ciphertext)
     {
+        return decryptWithAlgorithmAndKey(algorithm, rawKey, null, ciphertext);
+    }
+
+    /**
+     * Decrypts the provided ciphertext using the given algorithm name, raw key bytes, and optional message
+     * indicator.  When a non-null message indicator is provided, DES and AES use OFB mode with the MI as the
+     * initialization vector, consistent with P25 DES-OFB and AES-OFB specifications.
+     *
+     * @param algorithm        algorithm name: "DES" or "AES"
+     * @param rawKey           raw key bytes
+     * @param messageIndicator per-call message indicator bytes (may be null for ECB fallback)
+     * @param ciphertext       encrypted bytes
+     * @return decrypted bytes, or an empty byte array on failure
+     */
+    public byte[] decryptWithAlgorithmAndKey(String algorithm, byte[] rawKey, byte[] messageIndicator,
+                                             byte[] ciphertext)
+    {
         try
         {
+            if(messageIndicator != null && messageIndicator.length > 0)
+            {
+                if("DES".equals(algorithm))
+                {
+                    return decryptDESOFB(rawKey, messageIndicator, ciphertext);
+                }
+                if("AES".equals(algorithm))
+                {
+                    return decryptAESOFB(rawKey, messageIndicator, ciphertext);
+                }
+            }
+
             EncryptionKey tempKey = new EncryptionKey("alias", algorithm, rawKey);
             return decryptWithKey(tempKey, ciphertext);
         }
@@ -405,6 +446,49 @@ public class DecryptionEngine
             return trimmed;
         }
 
+        return cipher.doFinal(ciphertext);
+    }
+
+    /**
+     * Decrypts using DES in OFB (Output Feedback) mode with the message indicator as the initialization vector.
+     * P25 DES-OFB (algorithm ID 0x81) uses the first 8 bytes of the MI as the 64-bit IV.
+     * OFB mode operates as a stream cipher so no block-alignment padding is needed.
+     *
+     * @param rawKey     8-byte DES key
+     * @param iv         message indicator bytes (first 8 bytes used as IV)
+     * @param ciphertext encrypted bytes
+     * @return decrypted bytes
+     */
+    private byte[] decryptDESOFB(byte[] rawKey, byte[] iv, byte[] ciphertext) throws Exception
+    {
+        SecretKey secretKey = new SecretKeySpec(rawKey, "DES");
+        byte[] desIv = new byte[8];
+        System.arraycopy(iv, 0, desIv, 0, Math.min(iv.length, 8));
+        IvParameterSpec ivSpec = new IvParameterSpec(desIv);
+        Cipher cipher = Cipher.getInstance("DES/OFB/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
+        return cipher.doFinal(ciphertext);
+    }
+
+    /**
+     * Decrypts using AES in OFB (Output Feedback) mode with the message indicator as the initialization vector.
+     * P25 AES-256 (algorithm ID 0x84) and AES-128-OFB (algorithm ID 0x89) use the MI zero-padded to 16 bytes
+     * as the 128-bit IV.
+     * OFB mode operates as a stream cipher so no block-alignment padding is needed.
+     *
+     * @param rawKey     16-byte (AES-128) or 32-byte (AES-256) key
+     * @param iv         message indicator bytes (zero-padded to 16 bytes for the IV)
+     * @param ciphertext encrypted bytes
+     * @return decrypted bytes
+     */
+    private byte[] decryptAESOFB(byte[] rawKey, byte[] iv, byte[] ciphertext) throws Exception
+    {
+        SecretKey secretKey = new SecretKeySpec(rawKey, "AES");
+        byte[] aesIv = new byte[16];
+        System.arraycopy(iv, 0, aesIv, 0, Math.min(iv.length, 16));
+        IvParameterSpec ivSpec = new IvParameterSpec(aesIv);
+        Cipher cipher = Cipher.getInstance("AES/OFB/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
         return cipher.doFinal(ciphertext);
     }
 

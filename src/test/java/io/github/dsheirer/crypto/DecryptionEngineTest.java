@@ -764,4 +764,227 @@ public class DecryptionEngineTest
         assertEquals("DES", engine.getAlgorithmForKID("CC14"), "getAlgorithmForKID should be case-insensitive");
         assertNull(engine.getAlgorithmForKID("FFFF"), "getAlgorithmForKID should return null for unknown KID");
     }
+
+    /**
+     * Tests that DES-OFB decryption with a message indicator round-trips correctly.
+     * P25 DES-OFB (algorithm ID 0x81) uses the first 8 bytes of the 9-byte MI as the 64-bit IV.
+     */
+    @Test
+    public void testDESOFBDecryptWithMIRoundTrip()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x23, 0x45, 0x67, (byte)0x89, (byte)0xAB, (byte)0xCD, (byte)0xEF};
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+        engine.addKey("0081", "DES", key);
+
+        byte[] plaintext = new byte[18]; // typical IMBE frame size
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 1);
+        }
+
+        byte[] ciphertext = encryptDESOFBDirect(key, mi, plaintext);
+        byte[] decrypted = engine.decrypt("0081", mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "DES-OFB decryption with MI should recover plaintext");
+    }
+
+    /**
+     * Tests that AES-256-OFB decryption with a message indicator round-trips correctly.
+     * P25 AES-256 (algorithm ID 0x84) uses the 9-byte MI zero-padded to 16 bytes as the 128-bit IV.
+     */
+    @Test
+    public void testAES256OFBDecryptWithMIRoundTrip()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[32];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(i + 1);
+        }
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+        engine.addKey("0084", "AES", key);
+
+        byte[] plaintext = new byte[18]; // typical IMBE frame size
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x40 + i);
+        }
+
+        byte[] ciphertext = encryptAESOFBDirect(key, mi, plaintext);
+        byte[] decrypted = engine.decrypt("0084", mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "AES-256-OFB decryption with MI should recover plaintext");
+    }
+
+    /**
+     * Tests that AES-128-OFB decryption with a message indicator round-trips correctly.
+     * P25 AES-128-OFB (algorithm ID 0x89) uses the 9-byte MI zero-padded to 16 bytes as the 128-bit IV.
+     */
+    @Test
+    public void testAES128OFBDecryptWithMIRoundTrip()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[16];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(0x20 + i);
+        }
+        byte[] mi = new byte[]{(byte)0xAA, (byte)0xBB, (byte)0xCC, (byte)0xDD, (byte)0xEE, (byte)0xFF, 0x11, 0x22, 0x33};
+        engine.addKey("0089", "AES", key);
+
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x60 + i);
+        }
+
+        byte[] ciphertext = encryptAESOFBDirect(key, mi, plaintext);
+        byte[] decrypted = engine.decrypt("0089", mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "AES-128-OFB decryption with MI should recover plaintext");
+    }
+
+    /**
+     * Tests that decryptWithAlgorithmAndKey works for DES-OFB when MI is provided.
+     */
+    @Test
+    public void testDecryptWithAlgorithmAndKeyDESOFB()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x23, 0x45, 0x67, (byte)0x89, (byte)0xAB, (byte)0xCD, (byte)0xEF};
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(i + 0x30);
+        }
+
+        byte[] ciphertext = encryptDESOFBDirect(key, mi, plaintext);
+        byte[] decrypted = engine.decryptWithAlgorithmAndKey("DES", key, mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithAlgorithmAndKey DES-OFB should recover plaintext");
+    }
+
+    /**
+     * Tests that decryptWithAlgorithmAndKey works for AES-OFB when MI is provided.
+     */
+    @Test
+    public void testDecryptWithAlgorithmAndKeyAESOFB()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[32];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(i + 1);
+        }
+        byte[] mi = new byte[]{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, (byte)0x80, (byte)0x90};
+
+        byte[] plaintext = new byte[18];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x50 + i);
+        }
+
+        byte[] ciphertext = encryptAESOFBDirect(key, mi, plaintext);
+        byte[] decrypted = engine.decryptWithAlgorithmAndKey("AES", key, mi, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "decryptWithAlgorithmAndKey AES-OFB should recover plaintext");
+    }
+
+    /**
+     * Tests that DES with null MI in the 3-arg decrypt method still uses ECB mode (backward compatibility).
+     */
+    @Test
+    public void testDESDecryptWithNullMIStillUsesECB()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[]{0x01, 0x23, 0x45, 0x67, (byte)0x89, (byte)0xAB, (byte)0xCD, (byte)0xEF};
+        engine.addKey("0099", "DES", key);
+
+        byte[] plaintext = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+        byte[] ciphertext = encryptDESDirect(key, plaintext);
+
+        // With null MI, should fall back to ECB mode
+        byte[] decrypted = engine.decrypt("0099", null, ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "DES decrypt with null MI should still use ECB mode");
+    }
+
+    /**
+     * Tests that AES with empty MI in the 3-arg decrypt method still uses ECB mode (backward compatibility).
+     */
+    @Test
+    public void testAESDecryptWithEmptyMIStillUsesECB()
+    {
+        DecryptionEngine engine = new DecryptionEngine();
+
+        byte[] key = new byte[16];
+        for(int i = 0; i < key.length; i++)
+        {
+            key[i] = (byte)(0x20 + i);
+        }
+        engine.addKey("009A", "AES", key);
+
+        byte[] plaintext = new byte[16];
+        for(int i = 0; i < plaintext.length; i++)
+        {
+            plaintext[i] = (byte)(0x30 + i);
+        }
+        byte[] ciphertext = encryptAESDirect(key, plaintext);
+
+        // With empty MI, should fall back to ECB mode
+        byte[] decrypted = engine.decrypt("009A", new byte[0], ciphertext);
+
+        assertArrayEquals(plaintext, decrypted, "AES decrypt with empty MI should still use ECB mode");
+    }
+
+    /**
+     * Helper method to encrypt bytes using Java's DES/OFB/NoPadding cipher with an IV derived from the MI.
+     */
+    private static byte[] encryptDESOFBDirect(byte[] key, byte[] mi, byte[] plaintext)
+    {
+        try
+        {
+            javax.crypto.spec.SecretKeySpec secretKey = new javax.crypto.spec.SecretKeySpec(key, "DES");
+            byte[] desIv = new byte[8];
+            System.arraycopy(mi, 0, desIv, 0, Math.min(mi.length, 8));
+            javax.crypto.spec.IvParameterSpec ivSpec = new javax.crypto.spec.IvParameterSpec(desIv);
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("DES/OFB/NoPadding");
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey, ivSpec);
+            return cipher.doFinal(plaintext);
+        }
+        catch(Exception e)
+        {
+            throw new RuntimeException("Test helper DES-OFB encryption failed", e);
+        }
+    }
+
+    /**
+     * Helper method to encrypt bytes using Java's AES/OFB/NoPadding cipher with an IV derived from the MI.
+     */
+    private static byte[] encryptAESOFBDirect(byte[] key, byte[] mi, byte[] plaintext)
+    {
+        try
+        {
+            javax.crypto.spec.SecretKeySpec secretKey = new javax.crypto.spec.SecretKeySpec(key, "AES");
+            byte[] aesIv = new byte[16];
+            System.arraycopy(mi, 0, aesIv, 0, Math.min(mi.length, 16));
+            javax.crypto.spec.IvParameterSpec ivSpec = new javax.crypto.spec.IvParameterSpec(aesIv);
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/OFB/NoPadding");
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey, ivSpec);
+            return cipher.doFinal(plaintext);
+        }
+        catch(Exception e)
+        {
+            throw new RuntimeException("Test helper AES-OFB encryption failed", e);
+        }
+    }
 }
