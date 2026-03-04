@@ -111,15 +111,14 @@ public class StateMachineEncryptedTest
         sm.setState(State.ENCRYPTED);
         assertEquals(State.ENCRYPTED, sm.getState());
 
+        //Manually set a fade timeout in the past to simulate time passing
+        sm.setFadeTimeout(System.currentTimeMillis() - 1000);
         long timeoutBefore = sm.getFadeTimeout();
-
-        //Small delay to ensure time advances
-        try { Thread.sleep(10); } catch(InterruptedException ignored) {}
 
         //Same-state continuation should update the fade timeout
         sm.setState(State.ENCRYPTED);
         assertEquals(State.ENCRYPTED, sm.getState(), "State should remain ENCRYPTED");
-        assertTrue(sm.getFadeTimeout() >= timeoutBefore,
+        assertTrue(sm.getFadeTimeout() > timeoutBefore,
             "Fade timeout should be updated on same-state continuation");
     }
 

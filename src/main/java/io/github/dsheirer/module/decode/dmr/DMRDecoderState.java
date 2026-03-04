@@ -1403,7 +1403,7 @@ public class DMRDecoderState extends TimeslotDecoderState
         {
             event = Event.CONTINUATION;
 
-            String details = mCurrentCallEvent.getDetails();;
+            String details = mCurrentCallEvent.getDetails();
 
             if(details == null)
             {
