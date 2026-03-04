@@ -209,7 +209,7 @@ public class P25P1CryptTest
 
     /**
      * Tests MI expansion byte order against known-answer values computed from the P25 LFSR.
-     * MI = 0x0102030405060708 produces:
+     * The 9-byte MI {01,02,...,09} has its first 8 bytes (0x0102030405060708) loaded into the LFSR:
      *   overflow (iv[0..7])  = 0x0102030405060708 (original MI, since 64 bits shift out over 64 steps)
      *   lfsr     (iv[8..15]) = 0xB7DF8DB9CF619398 (LFSR state after 64 feedback steps)
      */
