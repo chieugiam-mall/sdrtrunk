@@ -35,11 +35,12 @@ import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncPar
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
+import io.github.dsheirer.module.decode.p25.phase1.IMBEInterleave;
+import io.github.dsheirer.module.decode.p25.phase1.P25P1CryptUtil;
 import io.github.dsheirer.module.decode.p25.reference.Encryption;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -124,7 +125,25 @@ public class P25P1AudioModule extends ImbeAudioModule
         {
             if(mEncryptedCallStateEstablished)
             {
-                if(message instanceof LDUMessage ldu)
+                if(message instanceof LDU2Message ldu2)
+                {
+                    // Process the LDU2 audio with the CURRENT MI (before updating)
+                    processAudio(ldu2);
+
+                    // After processing LDU2 voice, update MI for the next superframe
+                    if(mEncryptedCall && ldu2.getEncryptionSyncParameters().isValid())
+                    {
+                        EncryptionSyncParameters esp = ldu2.getEncryptionSyncParameters();
+                        mCurrentMessageIndicator = DecryptionEngine.hexToBytes(esp.getMessageIndicator());
+                        mCurrentEncryptionAlgorithm = esp.getEncryptionKey().getValue().getAlgorithm();
+                    }
+                    else if(mEncryptedCall && mCurrentMessageIndicator != null)
+                    {
+                        // If LDU2 ESP is invalid, cycle the MI using the P25 LFSR
+                        P25P1CryptUtil.cycleMI(mCurrentMessageIndicator);
+                    }
+                }
+                else if(message instanceof LDUMessage ldu)
                 {
                     processAudio(ldu);
                 }
@@ -204,8 +223,9 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     /**
      * Processes an audio packet by decoding the IMBE audio frames and rebroadcasting them as PCM audio packets.
-     * When the call is encrypted and a decryption engine with a matching key is available, the IMBE frames are
-     * decrypted before being passed to the audio codec.
+     * When the call is encrypted and a decryption engine with a matching key is available, each IMBE voice codeword
+     * is decrypted individually at the correct keystream offset using the P25 Phase 1 decryption pipeline:
+     * FEC decode (18-byte frame → 11-byte packed codeword), keystream XOR, FEC re-encode → JMBE codec.
      */
     private void processAudio(LDUMessage ldu)
     {
@@ -218,129 +238,146 @@ public class P25P1AudioModule extends ImbeAudioModule
                 addAudio(audio);
             }
         }
-        else if(mDecryptionEngine != null && mCurrentEncryptionKID != null)
+        else if(mDecryptionEngine != null && mCurrentEncryptionKID != null
+            && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
         {
-            List<byte[]> frames = ldu.getIMBEFrames();
-            byte[] concatenated = new byte[frames.size() * IMBE_FRAME_SIZE];
-            for(int i = 0; i < frames.size(); i++)
+            boolean isLDU2 = ldu instanceof LDU2Message;
+            byte[] keystream = null;
+            String algorithm = null;
+
+            // Determine the P25 protocol algorithm from the over-the-air algorithm ID
+            if(mCurrentEncryptionAlgorithm != UNSET_ALGORITHM)
             {
-                byte[] frame = frames.get(i);
-                System.arraycopy(frame, 0, concatenated, i * IMBE_FRAME_SIZE,
-                    Math.min(frame.length, IMBE_FRAME_SIZE));
+                algorithm = Encryption.toDecryptionAlgorithm(mCurrentEncryptionAlgorithm);
             }
 
-            byte[] decrypted = new byte[0];
-
-            // Check talkgroup key cache first to skip the full decryption cascade when possible
-            Integer talkgroupId = getCurrentTalkgroupId();
-            if(talkgroupId != null && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
+            // Try to find a key: first from the engine by KID, then from alias
+            byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
+            if(rawKey == null)
             {
-                CachedKey cached = mTalkgroupKeyCache.get(talkgroupId);
-                if(cached != null)
-                {
-                    if("RC4".equals(cached.algorithm()))
-                    {
-                        decrypted = mDecryptionEngine.decryptWithRC4Key(mCurrentMessageIndicator, cached.rawKey(), concatenated);
-                    }
-                    else
-                    {
-                        decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(cached.algorithm(), cached.rawKey(), mCurrentMessageIndicator, concatenated);
-                    }
-                }
-            }
-
-            if(decrypted.length == 0)
-            {
-                decrypted = mDecryptionEngine.decrypt(mCurrentEncryptionKID, mCurrentMessageIndicator, concatenated);
-
-                if(decrypted.length > 0 && talkgroupId != null)
-                {
-                    byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
-                    if(rawKey != null)
-                    {
-                        String algo = mDecryptionEngine.getAlgorithmForKID(mCurrentEncryptionKID);
-                        mTalkgroupKeyCache.put(talkgroupId, new CachedKey(rawKey, algo != null ? algo : "RC4"));
-                    }
-                }
-            }
-
-            //If the registered key algorithm didn't work, try using the P25 protocol-specified algorithm.
-            //This handles cases where the key was registered with the wrong algorithm string (e.g. "RC4"
-            //instead of "DES") by deriving the correct algorithm from the over-the-air algorithm ID.
-            if(decrypted.length == 0 && mCurrentEncryptionAlgorithm != UNSET_ALGORITHM
-                && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
-            {
-                String protocolAlgo = Encryption.toDecryptionAlgorithm(mCurrentEncryptionAlgorithm);
-                if(protocolAlgo != null)
-                {
-                    byte[] rawKey = mDecryptionEngine.getRawKeyBytesForKID(mCurrentEncryptionKID);
-                    if(rawKey != null)
-                    {
-                        String registeredAlgo = mDecryptionEngine.getAlgorithmForKID(mCurrentEncryptionKID);
-                        if(!protocolAlgo.equals(registeredAlgo))
-                        {
-                            mLog.info("Retrying decryption with protocol algorithm [{}] (registered as [{}]) for KID [{}]",
-                                    protocolAlgo, registeredAlgo, mCurrentEncryptionKID);
-                            decrypted = mDecryptionEngine.decryptWithAlgorithmAndKey(protocolAlgo, rawKey,
-                                mCurrentMessageIndicator, concatenated);
-
-                            if(decrypted.length > 0 && talkgroupId != null)
-                            {
-                                mTalkgroupKeyCache.put(talkgroupId, new CachedKey(rawKey, protocolAlgo));
-                            }
-                        }
-                    }
-                }
-            }
-
-            //If no key is registered for this KID but the call uses Motorola ADP (40-bit RC4) with null key
-            //ID 0, attempt decryption using a null (all-zero) 5-byte key. Key ID 0 is the P25 null key,
-            //and some Motorola systems transmit ADP-encrypted audio using this null key.
-            if(decrypted.length == 0 && mCurrentEncryptionAlgorithm == Encryption.MOTOROLA_ADP.getValue()
-                && "0000".equals(mCurrentEncryptionKID) && mCurrentMessageIndicator != null
-                && mCurrentMessageIndicator.length > 0)
-            {
-                decrypted = mDecryptionEngine.decryptWithNullKeyRC4(mCurrentMessageIndicator, 5, concatenated);
-
-                if(decrypted.length > 0 && talkgroupId != null)
-                {
-                    mTalkgroupKeyCache.put(talkgroupId, new CachedKey(new byte[5], "RC4"));
-                }
-            }
-
-            //If still no key found, check if the talkgroup alias provides a per-talkgroup encryption key.
-            if(decrypted.length == 0 && mCurrentMessageIndicator != null && mCurrentMessageIndicator.length > 0)
-            {
+                // Try alias-based key lookup
                 byte[][] foundKey = new byte[1][];
                 String[] foundAlgorithm = new String[1];
-                decrypted = tryAliasKeyDecrypt(mCurrentMessageIndicator, concatenated, foundKey, foundAlgorithm);
-
-                if(decrypted.length > 0 && talkgroupId != null && foundKey[0] != null)
+                findAliasKey(foundKey, foundAlgorithm);
+                rawKey = foundKey[0];
+                if(rawKey != null && algorithm == null)
                 {
-                    String algo = foundAlgorithm[0] != null ? foundAlgorithm[0] : "RC4";
-                    mTalkgroupKeyCache.put(talkgroupId, new CachedKey(foundKey[0], algo));
+                    algorithm = foundAlgorithm[0];
                 }
             }
+            else if(algorithm == null)
+            {
+                algorithm = mDecryptionEngine.getAlgorithmForKID(mCurrentEncryptionKID);
+            }
 
-            if(decrypted.length == 0)
+            // Also try null key for Motorola ADP with key ID 0
+            if(rawKey == null && mCurrentEncryptionAlgorithm == Encryption.MOTOROLA_ADP.getValue()
+                && "0000".equals(mCurrentEncryptionKID))
+            {
+                rawKey = new byte[5]; // null key
+                algorithm = "RC4";
+            }
+
+            // Generate keystream using the P25 Phase 1 algorithm
+            if(rawKey != null && algorithm != null)
+            {
+                keystream = generateP25Keystream(algorithm, rawKey, mCurrentMessageIndicator);
+            }
+
+            if(keystream != null)
+            {
+                List<byte[]> frames = ldu.getIMBEFrames();
+                for(int i = 0; i < frames.size(); i++)
+                {
+                    byte[] frame = frames.get(i);
+
+                    // FEC decode: 18-byte frame → 11-byte packed codeword
+                    byte[] packed = IMBEInterleave.decode(frame);
+
+                    // Decrypt: XOR with keystream at correct offset
+                    int offset = P25P1CryptUtil.getVoiceKeystreamOffset(algorithm, isLDU2, i);
+                    if(offset + P25P1CryptUtil.PACKED_CODEWORD_SIZE <= keystream.length)
+                    {
+                        for(int j = 0; j < P25P1CryptUtil.PACKED_CODEWORD_SIZE; j++)
+                        {
+                            packed[j] ^= keystream[offset + j];
+                        }
+                    }
+
+                    // FEC re-encode: 11-byte packed codeword → 18-byte frame
+                    byte[] decryptedFrame = IMBEInterleave.encode(packed);
+
+                    float[] audio = getAudioCodec().getAudio(decryptedFrame);
+                    audio = mGain.apply(audio);
+                    addAudio(audio);
+                }
+
+                // Cache key for talkgroup if successful
+                Integer talkgroupId = getCurrentTalkgroupId();
+                if(talkgroupId != null)
+                {
+                    mTalkgroupKeyCache.put(talkgroupId, new CachedKey(rawKey, algorithm));
+                }
+            }
+            else
             {
                 Encryption encType = Encryption.fromValue(mCurrentEncryptionAlgorithm);
                 String protocolAlgo = encType.toDecryptionAlgorithm();
                 mLog.warn("Failed to decrypt encrypted audio for talkgroup [{}] with KID [{}] algorithm [{}] (0x{}) " +
-                        "protocolAlgo [{}]", talkgroupId, mCurrentEncryptionKID, encType,
+                        "protocolAlgo [{}]", getCurrentTalkgroupId(), mCurrentEncryptionKID, encType,
                         String.format("%02X", mCurrentEncryptionAlgorithm & 0xFF),
                         protocolAlgo != null ? protocolAlgo : "UNSUPPORTED");
             }
+        }
+    }
 
-            if(decrypted.length == concatenated.length)
+    /**
+     * Generates the P25 Phase 1 keystream for the given algorithm, key, and message indicator.
+     */
+    private byte[] generateP25Keystream(String algorithm, byte[] rawKey, byte[] mi)
+    {
+        switch(algorithm)
+        {
+            case "DES":
+                return P25P1CryptUtil.generateDESOFBKeystream(rawKey, mi);
+            case "AES":
+                return P25P1CryptUtil.generateAES256OFBKeystream(rawKey, mi);
+            case "RC4":
+                return P25P1CryptUtil.generateRC4ADPKeystream(rawKey, mi);
+            default:
+                mLog.warn("Unsupported P25 encryption algorithm: {}", algorithm);
+                return null;
+        }
+    }
+
+    /**
+     * Searches for an encryption key in the talkgroup alias, if one is configured.
+     */
+    private void findAliasKey(byte[][] foundKeyOut, String[] foundAlgorithmOut)
+    {
+        AliasList aliasList = getAliasList();
+        if(aliasList == null)
+        {
+            return;
+        }
+
+        for(Identifier identifier : getIdentifierCollection().getIdentifiers(Form.TALKGROUP))
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+            for(Alias alias : aliases)
             {
-                for(int i = 0; i < frames.size(); i++)
+                for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
                 {
-                    byte[] decryptedFrame = Arrays.copyOfRange(decrypted, i * IMBE_FRAME_SIZE,
-                        (i + 1) * IMBE_FRAME_SIZE);
-                    float[] audio = getAudioCodec().getAudio(decryptedFrame);
-                    audio = mGain.apply(audio);
-                    addAudio(audio);
+                    if(aliasID instanceof EncryptionKeyID encKeyID && encKeyID.isValid())
+                    {
+                        byte[] rawKey = encKeyID.getRawKeyBytes();
+                        if(rawKey != null)
+                        {
+                            foundKeyOut[0] = rawKey;
+                            foundAlgorithmOut[0] = encKeyID.getAlgorithm();
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -359,82 +396,6 @@ public class P25P1AudioModule extends ImbeAudioModule
             }
         }
         return null;
-    }
-
-    /**
-     * Attempts decryption using a key found in the talkgroup alias, if one is configured.
-     * This provides a per-talkgroup key fallback when no key is registered for the transmitted KID.
-     *
-     * @param messageIndicator per-call message indicator bytes
-     * @param ciphertext encrypted IMBE frame bytes
-     * @param foundKeyOut single-element array to receive the raw key bytes that succeeded (may be null on failure)
-     * @param foundAlgorithmOut single-element array to receive the algorithm name that succeeded (may be null on failure)
-     * @return decrypted bytes if an alias key was found and decryption succeeded, otherwise empty byte array
-     */
-    private byte[] tryAliasKeyDecrypt(byte[] messageIndicator, byte[] ciphertext, byte[][] foundKeyOut,
-                                      String[] foundAlgorithmOut)
-    {
-        AliasList aliasList = getAliasList();
-        if(aliasList == null)
-        {
-            return new byte[0];
-        }
-
-        for(Identifier identifier : getIdentifierCollection().getIdentifiers(Form.TALKGROUP))
-        {
-            List<Alias> aliases = aliasList.getAliases(identifier);
-            int encKeyCount = 0;
-            for(Alias alias : aliases)
-            {
-                for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
-                {
-                    if(aliasID instanceof EncryptionKeyID encKeyID && encKeyID.isValid())
-                    {
-                        encKeyCount++;
-                    }
-                }
-            }
-            mLog.debug("tryAliasKeyDecrypt: talkgroup [{}] aliases=[{}] encryptionKeys=[{}]",
-                    identifier, aliases.size(), encKeyCount);
-
-            for(Alias alias : aliases)
-            {
-                for(io.github.dsheirer.alias.id.AliasID aliasID : alias.getAliasIdentifiers())
-                {
-                    if(aliasID instanceof EncryptionKeyID encKeyID && encKeyID.isValid())
-                    {
-                        byte[] rawKey = encKeyID.getRawKeyBytes();
-                        if(rawKey != null)
-                        {
-                            String algorithm = encKeyID.getAlgorithm();
-                            byte[] result;
-                            if("RC4".equals(algorithm))
-                            {
-                                result = mDecryptionEngine.decryptWithRC4Key(messageIndicator, rawKey, ciphertext);
-                            }
-                            else
-                            {
-                                result = mDecryptionEngine.decryptWithAlgorithmAndKey(algorithm, rawKey, messageIndicator, ciphertext);
-                            }
-                            if(result.length > 0)
-                            {
-                                if(foundKeyOut != null)
-                                {
-                                    foundKeyOut[0] = rawKey;
-                                }
-                                if(foundAlgorithmOut != null)
-                                {
-                                    foundAlgorithmOut[0] = algorithm;
-                                }
-                                return result;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return new byte[0];
     }
 
     /**
