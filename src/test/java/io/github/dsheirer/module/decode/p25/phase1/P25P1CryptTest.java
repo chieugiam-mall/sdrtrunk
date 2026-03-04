@@ -150,6 +150,9 @@ public class P25P1CryptTest
 
     /**
      * Tests that MI expansion to 128 bits produces a non-trivial result.
+     * The P25 LFSR expansion of a 64-bit MI to 128 bits produces an IV where:
+     * - iv[0..7] = overflow bits (equals the original MI, since all 64 bits shift out)
+     * - iv[8..15] = final LFSR state (a non-trivial function of the MI)
      */
     @Test
     public void testMIExpansionProducesNonTrivialIV()
@@ -160,7 +163,7 @@ public class P25P1CryptTest
         assertNotNull(iv);
         assertEquals(16, iv.length, "IV should be 16 bytes");
 
-        // Verify the IV is not all zeros or all same value
+        // Verify the IV is not all zeros
         boolean allZero = true;
         for(byte b : iv)
         {
@@ -172,17 +175,24 @@ public class P25P1CryptTest
         }
         assertTrue(!allZero, "IV should not be all zeros");
 
-        // Verify the IV is not just zero-padded MI
-        boolean isZeroPadded = true;
+        // The first 8 bytes of the IV are the overflow bits, which for a 64-bit LFSR
+        // after 64 steps equal the original MI bytes.  Verify this expected byte order.
         for(int i = 0; i < 8; i++)
         {
-            if(iv[i] != mi[i])
+            assertEquals(mi[i], iv[i], "IV[" + i + "] should equal MI[" + i + "] (overflow = original MI)");
+        }
+
+        // The second 8 bytes (LFSR state) must differ from the first 8 bytes (MI)
+        boolean secondHalfDiffers = false;
+        for(int i = 0; i < 8; i++)
+        {
+            if(iv[i + 8] != mi[i])
             {
-                isZeroPadded = false;
+                secondHalfDiffers = true;
                 break;
             }
         }
-        assertTrue(!isZeroPadded, "IV should not be simple zero-padded MI (LFSR expansion required)");
+        assertTrue(secondHalfDiffers, "IV second half (LFSR state) should differ from MI");
     }
 
     /**
@@ -195,6 +205,26 @@ public class P25P1CryptTest
         byte[] iv1 = P25P1CryptUtil.expandMITo128(mi);
         byte[] iv2 = P25P1CryptUtil.expandMITo128(mi);
         assertArrayEquals(iv1, iv2, "MI expansion should be deterministic");
+    }
+
+    /**
+     * Tests MI expansion byte order against known-answer values computed from the P25 LFSR.
+     * The 9-byte MI {01,02,...,09} has its first 8 bytes (0x0102030405060708) loaded into the LFSR:
+     *   overflow (iv[0..7])  = 0x0102030405060708 (original MI, since 64 bits shift out over 64 steps)
+     *   lfsr     (iv[8..15]) = 0xB7DF8DB9CF619398 (LFSR state after 64 feedback steps)
+     */
+    @Test
+    public void testMIExpansionKnownAnswer()
+    {
+        byte[] mi = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09};
+        byte[] iv = P25P1CryptUtil.expandMITo128(mi);
+
+        byte[] expected = {
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            (byte)0xB7, (byte)0xDF, (byte)0x8D, (byte)0xB9,
+            (byte)0xCF, (byte)0x61, (byte)0x93, (byte)0x98
+        };
+        assertArrayEquals(expected, iv, "MI expansion should match P25 LFSR known-answer values");
     }
 
     /**

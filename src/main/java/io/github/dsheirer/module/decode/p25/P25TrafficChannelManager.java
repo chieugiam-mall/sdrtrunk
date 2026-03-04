@@ -519,6 +519,13 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             if(tracker != null)
             {
                 tracker.addIdentifierIfMissing(identifier);
+
+                //Add the encryption key to the call event details.
+                if(identifier instanceof EncryptionKeyIdentifier eki && eki.isEncrypted())
+                {
+                    tracker.addDetailsIfMissing(eki.toString());
+                }
+
                 tracker.updateDurationTraffic(timestamp);
                 broadcast(tracker);
             }
@@ -844,9 +851,14 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                 mic.update(eki);
 
                 //Create a new event for the current call.
+                String details = "PHASE 1 CALL " + (serviceOptions != null ? serviceOptions : "");
+                if(eki != null && eki.isEncrypted())
+                {
+                    details += " " + eki.toString();
+                }
                 P25ChannelGrantEvent callEvent = P25ChannelGrantEvent.builder(decodeEventType, timestamp, serviceOptions)
                         .channelDescriptor(channelDescriptor)
-                        .details("PHASE 1 CALL " + (serviceOptions != null ? serviceOptions : ""))
+                        .details(details)
                         .identifiers(mic)
                         .build();
 
