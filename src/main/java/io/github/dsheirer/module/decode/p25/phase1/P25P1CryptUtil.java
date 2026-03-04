@@ -96,13 +96,13 @@ public class P25P1CryptUtil
         byte[] iv = new byte[16];
         for(int i = 7; i >= 0; i--)
         {
-            iv[i] = (byte)(overflow & 0xFF);
-            overflow >>>= 8;
+            iv[i] = (byte)(lfsr & 0xFF);
+            lfsr >>>= 8;
         }
         for(int i = 15; i >= 8; i--)
         {
-            iv[i] = (byte)(lfsr & 0xFF);
-            lfsr >>>= 8;
+            iv[i] = (byte)(overflow & 0xFF);
+            overflow >>>= 8;
         }
         return iv;
     }
