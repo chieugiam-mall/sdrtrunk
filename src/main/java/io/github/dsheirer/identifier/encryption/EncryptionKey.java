@@ -50,8 +50,8 @@ public abstract class EncryptionKey implements Comparable<EncryptionKey>
     public String toString()
     {
         StringBuilder sb = new StringBuilder();
-        sb.append("ALGORITHM:").append(getAlgorithm());
-        sb.append(" KEY:").append(getKey());
+        sb.append("ALGORITHM:").append(String.format("%02X", getAlgorithm()));
+        sb.append(" KEY:").append(String.format("%04X", getKey()));
         return sb.toString();
     }
 

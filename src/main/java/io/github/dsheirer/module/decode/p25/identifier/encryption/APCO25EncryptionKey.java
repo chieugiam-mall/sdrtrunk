@@ -50,7 +50,7 @@ public class APCO25EncryptionKey extends EncryptionKey
                 sb.append("ENCRYPTION:").append(getEncryptionAlgorithm());
             }
 
-            sb.append(" KEY:").append(getKey());
+            sb.append(" KEY:").append(String.format("%04X", getKey()));
         }
         else
         {
